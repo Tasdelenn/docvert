@@ -1,0 +1,21 @@
+[package]
+name = "docvert"
+version = "0.1.0"
+edition = "2021"
+authors = ["DocVert contributors"]
+description = "FFmpeg benzeri, TUI ve CLI destekli çoklu belge/görsel dönüştürücü"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive", "cargo"] }
+ratatui = { version = "0.26", features = ["crossterm"] }
+crossterm = "0.27"
+tokio = { version = "1.38", features = ["full"] }
+rayon = "1.10"
+image = "0.25"
+lopdf = "0.32"
+printpdf = { version = "0.7", features = ["embedded_images"] }
+indicatif = { version = "0.17", features = ["tokio"] }
+colored = "2.1"
+anyhow = "1.0"
+thiserror = "1.0"
