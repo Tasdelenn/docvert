@@ -20,13 +20,7 @@ impl DocumentConverter for PdfToDocxConverter {
         output: &Path,
         _options: &ConvertOptions,
     ) -> Result<(), DocVertError> {
-        let document = lopdf::Document::load(input)?;
-        let pages: Vec<u32> = document.get_pages().keys().copied().collect();
-        let text = if pages.is_empty() {
-            String::new()
-        } else {
-            super::text_output::sanitize_extracted(&document.extract_text(&pages)?)
-        };
+        let text = crate::core::pdf_text::extract_text(input)?;
 
         let mut blocks: Vec<super::docx::DocxBlock> = Vec::new();
         for paragraph in text.split("\n\n") {

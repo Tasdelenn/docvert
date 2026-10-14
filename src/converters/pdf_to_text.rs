@@ -20,13 +20,7 @@ impl DocumentConverter for PdfToTextConverter {
         output: &Path,
         _options: &ConvertOptions,
     ) -> Result<(), DocVertError> {
-        let document = lopdf::Document::load(input)?;
-        let pages: Vec<u32> = document.get_pages().keys().copied().collect();
-        let text = if pages.is_empty() {
-            String::new()
-        } else {
-            super::text_output::sanitize_extracted(&document.extract_text(&pages)?)
-        };
+        let text = crate::core::pdf_text::extract_text(input)?;
         let formatted = super::text_output::format_document(&text, Format::from_path(output));
         std::fs::write(output, formatted)
             .map_err(|_| DocVertError::Output(output.to_path_buf()))?;

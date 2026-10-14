@@ -96,6 +96,7 @@ Argümansız `docvert` çalıştırınca açılır.
 | `←` / `→`           | Sağ paneldeyken hedef formatı değiştir           |
 | `+` / `-`           | Görsel kalitesini/ölçeğini değiştir (1-100)      |
 | `]` / `[`           | PDF sıkıştırma seviyesini değiştir (0-9)         |
+| `V`                 | Jev denetimini aç/kapat (OPENROUTER_API_KEY gerekir) |
 | `P` / `T` / `D`     | Hedef format: **P**DF / **T**XT / **D**OCX       |
 | `Backspace`         | Bir üst klasöre çık                              |
 | `Q`                 | Çık                                              |
@@ -193,17 +194,18 @@ yalnızca uyarı üretir; anahtar/ağ yoksa sessizce devre dışı kalır.
   çıkarılan metnin uzunluğu ve örneği) ve "çıkarım kaynağın içeriğini yakaladı
   mı?" sorusuna olasılık ister.
 - Örnekler:
-  - `pdf → txt`, Identity-H fontlu PDF'te boş çıkarım → `⚠ p=0.07` (yakalandı).
-  - basit/WinAnsi fontlu PDF → `txt` tam çıkarım → `✓ p=0.90, $0.000021`.
+  - Identity-H fontlu PDF → `txt`, artık tam çıkarım → `✓ p≈0.90`.
+  - Boş/eksik çıkarım olursa → `⚠` uyarısı (danışman).
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 docvert -i belge.pdf -t txt -o belge.txt --verify
 ```
 
-> Bilinen sınırlama: `pdf → txt/md/html` çıkarımı `lopdf` kullanır ve
-> Identity-H (CID) fontlu PDF'lerde (ör. LibreOffice veya bu aracın kendi
-> metin→PDF çıktısı) boş döner. `--verify` bu durumu açıkça işaretler.
+> `pdf → txt/md/html` çıkarımı artık kendi **ToUnicode tabanlı** çıkarıcımızı
+> kullanır (`core/pdf_text.rs`); Identity-H (CID) ve WinAnsi fontlu PDF'lerde
+> (ör. LibreOffice çıktısı veya bu aracın kendi metin→PDF çıktısı) Türkçe dahil
+> metni doğru çıkarır. `--verify`/`V` ile bu çıkarım ayrıca denetlenebilir.
 
 ---
 

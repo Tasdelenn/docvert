@@ -112,3 +112,25 @@ cargo run -- -i belge.pdf --split -o sayfalar/
 - Not: Bu katman `PDF→TXT`'in bilinen Identity-H sınırını da görünür kıldı;
   gerçek dünya PDF'lerinin çoğunda lopdf çıkarımı boş dönüyor. Asıl iyileştirme
   ToUnicode tabanlı çıkarımdır (gelecek iş).
+
+## 4. Devir — ToUnicode metin çıkarımı + TUI Jev denetimi
+
+- `cargo fmt`, `cargo clippy --all-targets` ve `cargo test` (14 uçtan uca + 22
+  birim testi) temiz geçiyor.
+- **`core/pdf_text.rs` (yeni):** ToUnicode CMap'lerini kullanan kendi metin
+  çıkarıcısı. Hem iki baytlı (Type0/Identity-H) hem tek baytlı (TrueType/Type1,
+  CP1252 fallback) fontları destekler; içerik akışı tokenizer'ı `Tj/TJ/'/"`
+  operatörlerini, literal/hex stringleri, dizileri, satır içi görüntüleri
+  (BI…EI) ve sözlükleri işler.
+  - Kritik ayrıntı: gerçek CMap'lerde anahtar kelimeden önce sayı bulunur
+    (`100 beginbfchar`), `starts_with` bu yüzden eşlemeyi kaçırıyordu;
+    `ends_with` ile düzeltildi.
+  - `PdfToTextConverter` ve `PdfToDocxConverter` artık bunu kullanır.
+- **Doğrulama:** kendi Identity-H PDF'imiz, LibreOffice PDF'i ve basit WinAnsi
+  PDF'i Türkçe dahil doğru çıkarılıyor (`pdftotext` ile karşılaştırıldı).
+- **TUI Jev denetimi:** `V` tuşu denetimi aç/kapat; sonuç kuyruk satırında
+  (`✓ doğruladı` / `⚠ şüpheli` / `· atlandı`) gösterilir. Sağ panelde durum
+  satırı eklendi.
+- `jev_gate` ile son commit gerçek per-file diff'lerle denetlendi: 3 verified,
+  1 unsupported (iddianın kanıtı diff'e konmadığı için — Jev kanıta bağlı
+  çalışıyor), 2 review; patch review yine `escalate` (özet diff + düşük güven).

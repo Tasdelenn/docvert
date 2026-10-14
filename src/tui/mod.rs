@@ -30,12 +30,14 @@ struct QueueJob {
     input: PathBuf,
     output: PathBuf,
     state: JobState,
+    note: Option<String>,
 }
 #[derive(Clone, Debug)]
 struct JobUpdate {
     input: PathBuf,
     output: PathBuf,
     state: JobState,
+    note: Option<String>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -68,6 +70,7 @@ struct App {
     target_index: usize,
     hovered_target: Option<usize>,
     options: ConvertOptions,
+    verify: bool,
     focus: Focus,
     queue: Vec<QueueJob>,
     registry: Arc<ConverterRegistry>,
@@ -87,6 +90,7 @@ impl App {
             target_index: 0,
             hovered_target: None,
             options: ConvertOptions::default(),
+            verify: false,
             focus: Focus::Explorer,
             queue: Vec::new(),
             registry: Arc::new(ConverterRegistry::with_detected_drivers()),
@@ -191,24 +195,46 @@ impl App {
                 input: input.clone(),
                 output: output.clone(),
                 state: JobState::Waiting,
+                note: None,
             });
             let registry = Arc::clone(&self.registry);
             let sender = self.sender.clone();
             let options = self.options;
+            let verify = self.verify;
+            let target = self.target;
             rayon::spawn(move || {
                 let _ = sender.send(JobUpdate {
                     input: input.clone(),
                     output: output.clone(),
                     state: JobState::Running,
+                    note: None,
                 });
-                let state = match registry.convert(&input, &output, &options) {
-                    Ok(()) => JobState::Done,
-                    Err(error) => JobState::Failed(error.to_string()),
+                let (state, note) = match registry.convert(&input, &output, &options) {
+                    Ok(()) => {
+                        let note = if verify {
+                            Some(match crate::core::qa::review(&input, target, &output) {
+                                Ok(assessment)
+                                    if assessment.probability < crate::core::jev::WARN_BELOW =>
+                                {
+                                    format!("⚠ Jev şüpheli (p={:.2})", assessment.probability)
+                                }
+                                Ok(assessment) => {
+                                    format!("✓ Jev doğruladı (p={:.2})", assessment.probability)
+                                }
+                                Err(error) => format!("· Jev atlandı: {error}"),
+                            })
+                        } else {
+                            None
+                        };
+                        (JobState::Done, note)
+                    }
+                    Err(error) => (JobState::Failed(error.to_string()), None),
                 };
                 let _ = sender.send(JobUpdate {
                     input,
                     output,
                     state,
+                    note,
                 });
             });
         }
@@ -227,6 +253,7 @@ impl App {
                     completed = true;
                 }
                 job.state = update.state;
+                job.note = update.note;
             }
         }
         // Yeni üretilen dosya sol panelde hemen görünsün.
@@ -328,6 +355,9 @@ fn run_loop(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>) -> io::Result
                         .options
                         .with_compress_level(app.options.compress_level.saturating_sub(1));
                 }
+                KeyCode::Char('v' | 'V') => {
+                    app.verify = !app.verify;
+                }
                 KeyCode::Char('p' | 'P') => app.set_target(Format::Pdf),
                 KeyCode::Char('t' | 'T') => app.set_target(Format::Txt),
                 KeyCode::Char('d' | 'D') => app.set_target(Format::Docx),
@@ -390,7 +420,7 @@ fn compute_layout(area: Rect, target_count: usize) -> LayoutAreas {
     let preview_split = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(8),
+            Constraint::Length(9),
             Constraint::Length(rows as u16),
             Constraint::Min(2),
         ])
@@ -595,6 +625,18 @@ fn draw(frame: &mut ratatui::Frame, app: &App, targets: &[Format]) {
             ),
             Span::styled("  ([ / ])", Style::default().fg(Color::DarkGray)),
         ]),
+        Line::from(vec![
+            Span::styled("Jev denetimi: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                if app.verify { "açık" } else { "kapalı" },
+                Style::default().fg(if app.verify {
+                    Color::Green
+                } else {
+                    Color::DarkGray
+                }),
+            ),
+            Span::styled("  (V)", Style::default().fg(Color::DarkGray)),
+        ]),
         Line::from(""),
         Line::from(Span::styled(
             "⚙ HEDEF FORMAT",
@@ -690,11 +732,18 @@ fn draw(frame: &mut ratatui::Frame, app: &App, targets: &[Format]) {
                 JobState::Done => ("Tamamlandı", 1.0, Color::Green),
                 JobState::Failed(error) => (error.as_str(), 1.0, Color::Red),
             };
-            let title = format!(
-                "{} → {}  ({label})",
-                job.input.file_name().unwrap_or_default().to_string_lossy(),
-                job.output.file_name().unwrap_or_default().to_string_lossy()
-            );
+            let title = match &job.note {
+                Some(note) => format!(
+                    "{} → {}  ({label})  {note}",
+                    job.input.file_name().unwrap_or_default().to_string_lossy(),
+                    job.output.file_name().unwrap_or_default().to_string_lossy()
+                ),
+                None => format!(
+                    "{} → {}  ({label})",
+                    job.input.file_name().unwrap_or_default().to_string_lossy(),
+                    job.output.file_name().unwrap_or_default().to_string_lossy()
+                ),
+            };
             frame.render_widget(
                 Gauge::default()
                     .block(Block::default().title(title))
@@ -720,6 +769,8 @@ fn draw(frame: &mut ratatui::Frame, app: &App, targets: &[Format]) {
         Span::raw(" kalite  "),
         key_hint("[/]"),
         Span::raw(" sıkıştırma  "),
+        key_hint("V"),
+        Span::raw(" Jev denetimi  "),
         key_hint("Backspace"),
         Span::raw(" üst klasör  "),
         key_hint("Q"),
