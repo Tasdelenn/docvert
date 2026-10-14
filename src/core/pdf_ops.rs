@@ -46,35 +46,30 @@ pub fn merge_pdfs(inputs: Vec<PathBuf>, output: PathBuf) -> Result<(), DocVertEr
 
 fn merge_documents(mut documents: Vec<Document>, output: &Path) -> Result<(), DocVertError> {
     let mut merged = Document::with_version("1.5");
-    let mut pages: BTreeMap<ObjectId, Object> = BTreeMap::new();
     let mut objects: BTreeMap<ObjectId, Object> = BTreeMap::new();
-    let mut max_id = 1;
+    let mut page_ids: Vec<ObjectId> = Vec::new();
+    // Her kaynak belgeyi kendi kimlik bloğuna kaydırırız; böylece nesne
+    // kimlikleri hiçbir zaman çakışmaz (eski hata: boş `merged` belgesinden
+    // alınan (1, 0) kimliği kaynak nesnelerin üzerine yazıyordu).
+    let mut next_id: u32 = 1;
     for document in &mut documents {
-        document.renumber_objects_with(max_id);
-        max_id = document.max_id + 1;
-        for (_, page_id) in document.get_pages() {
-            pages.insert(page_id, document.get_object(page_id)?.clone());
-        }
+        document.renumber_objects_with(next_id);
+        next_id = document.max_id + 1;
+        page_ids.extend(document.get_pages().into_values());
         objects.extend(std::mem::take(&mut document.objects));
     }
-    let pages_id = merged.new_object_id();
-    let catalog_id = merged.new_object_id();
-    for (id, mut page) in pages {
+    // Pages ve Catalog nesneleri için tüm kaynakların ütesindeki boş kimlikleri ayırırız.
+    let pages_id: ObjectId = (next_id, 0);
+    let catalog_id: ObjectId = (next_id + 1, 0);
+    for page_id in &page_ids {
+        let page = objects.get_mut(page_id).ok_or_else(|| {
+            DocVertError::InvalidInput("Birleştirmede bir sayfa nesnesi bulunamadı".into())
+        })?;
         if let Ok(dict) = page.as_dict_mut() {
             dict.set("Parent", pages_id);
         }
-        objects.insert(id, page);
     }
-    let kids: Vec<Object> = objects
-        .iter()
-        .filter_map(|(id, object)| {
-            object
-                .as_dict()
-                .ok()
-                .filter(|dict| dict.get(b"Type").ok() == Some(&Object::Name(b"Page".to_vec())))
-                .map(|_| Object::Reference(*id))
-        })
-        .collect();
+    let kids: Vec<Object> = page_ids.iter().map(|id| Object::Reference(*id)).collect();
     let count = kids.len();
     objects.insert(
         pages_id,
@@ -85,6 +80,7 @@ fn merge_documents(mut documents: Vec<Document>, output: &Path) -> Result<(), Do
         dictionary! { "Type" => "Catalog", "Pages" => pages_id }.into(),
     );
     merged.objects = objects;
+    merged.max_id = next_id + 1;
     merged.trailer.set("Root", catalog_id);
     merged.compress();
     merged.save(output)?;
@@ -96,6 +92,12 @@ pub fn split_pdf(input: PathBuf, output_dir: PathBuf) -> Result<(), DocVertError
     std::fs::create_dir_all(&output_dir)?;
     let document = Document::load(&input)?;
     let page_numbers: Vec<u32> = document.get_pages().keys().copied().collect();
+    if page_numbers.is_empty() {
+        return Err(DocVertError::InvalidInput(format!(
+            "PDF'te sayfa bulunamadı: {}",
+            input.display()
+        )));
+    }
     for number in &page_numbers {
         let mut single = Document::load(&input)?;
         let remove: Vec<u32> = page_numbers

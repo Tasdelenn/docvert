@@ -13,7 +13,7 @@ pub struct ConverterRegistry {
 impl ConverterRegistry {
     pub fn with_detected_drivers() -> Self {
         let mut registry = Self::default();
-        registry.register(ImageToPdfConverter::default());
+        registry.register(ImageToPdfConverter);
         if let Some(office) = ExternalOfficeConverter::detect() {
             registry.register(office);
         }
