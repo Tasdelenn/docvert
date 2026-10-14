@@ -243,3 +243,20 @@ fn lower_quality_produces_smaller_pdf() {
         "düşük kalite ({low_size} B) yüksek kaliteden ({high_size} B) küçük olmalı"
     );
 }
+
+/// `text_operator_count`, metin içeren bir PDF'te pozitif dönmeli; bu,
+/// boş çıkan metin çıkarımını Jev'in ayırt edebilmesi için kanıttır.
+#[test]
+fn text_pdf_has_text_operators() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("metin.txt");
+    std::fs::write(&input, "Merhaba DocVert\n").unwrap();
+    let output = dir.path().join("metin.pdf");
+    let registry = docvert::core::registry::ConverterRegistry::with_detected_drivers();
+    registry
+        .convert(&input, &output, &ConvertOptions::default())
+        .unwrap();
+
+    let operators = pdf_ops::text_operator_count(&output).unwrap();
+    assert!(operators > 0, "metin PDF'inde Tj/TJ operatörü olmalı");
+}

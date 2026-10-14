@@ -43,6 +43,9 @@ pub struct CliArgs {
     /// PDF akış sıkıştırma seviyesi (0-9).
     #[arg(long, value_name = "0-9", default_value_t = 6)]
     pub compress: u8,
+    /// Dönüşüm çıktısını Jev ile denetler (OPENROUTER_API_KEY gerekir).
+    #[arg(long)]
+    pub verify: bool,
     /// Komut ve parametreleri Türkçe, TLDR biçiminde açıklar.
     #[arg(long)]
     pub explain: bool,
@@ -61,6 +64,10 @@ pub fn run(args: CliArgs) -> Result<(), DocVertError> {
     let options = ConvertOptions::default()
         .with_image_quality(args.quality)
         .with_compress_level(args.compress);
+    if args.verify {
+        // Opt-in Jev denetimini bu çalıştırma için etkinleştir.
+        std::env::set_var("DOCVERT_JEV", "1");
+    }
     if args.merge {
         let output = args.output.ok_or_else(|| {
             DocVertError::InvalidInput("--merge için -o çıktı.pdf gereklidir".into())
@@ -119,6 +126,33 @@ pub fn run(args: CliArgs) -> Result<(), DocVertError> {
             let result = registry
                 .convert(input, &output_path, &options)
                 .map_err(|e| format!("{}: {e}", input.display()));
+            if result.is_ok() && crate::core::jev::enabled() {
+                match crate::core::qa::review(input, target, &output_path) {
+                    Ok(assessment)
+                        if assessment.probability < crate::core::jev::WARN_BELOW =>
+                    {
+                        eprintln!(
+                            "⚠ Jev: {} → .{} çıktısı şüpheli (p={:.2}, {}). Metin çıkarımı eksik olabilir.",
+                            input.display(),
+                            target.extension(),
+                            assessment.probability,
+                            assessment.label
+                        );
+                    }
+                    Ok(assessment) => {
+                        eprintln!(
+                            "✓ Jev: {} doğrulandı (p={:.2}{}).",
+                            input.display(),
+                            assessment.probability,
+                            assessment
+                                .cost
+                                .map(|cost| format!(", ${cost:.6}"))
+                                .unwrap_or_default()
+                        );
+                    }
+                    Err(error) => eprintln!("· Jev denetimi atlandı: {error}"),
+                }
+            }
             progress.inc(1);
             result.err()
         })

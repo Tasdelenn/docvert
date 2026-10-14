@@ -121,3 +121,35 @@ pub fn split_pdf(input: PathBuf, output_dir: PathBuf) -> Result<(), DocVertError
     }
     Ok(())
 }
+
+/// PDF içerik akışlarındaki metin gösterme operatörlerinin (Tj/TJ) yaklaşık
+/// sayısı. Görüntü XObject'leri atlanır. Boş çıkan bir metin çıkarımının aslında
+/// metin içerip içermediğini değerlendirmek için kanıt olarak kullanılır.
+pub fn text_operator_count(path: &Path) -> Result<usize, DocVertError> {
+    let document = Document::load(path)?;
+    let mut count = 0usize;
+    for object in document.objects.values() {
+        let Object::Stream(stream) = object else {
+            continue;
+        };
+        if stream
+            .dict
+            .get(b"Subtype")
+            .and_then(Object::as_name_str)
+            .ok()
+            == Some("Image")
+        {
+            continue;
+        }
+        let content = stream
+            .decompressed_content()
+            .unwrap_or_else(|_| stream.content.clone());
+        for operator in [b"Tj".as_slice(), b"TJ".as_slice()] {
+            count += content
+                .windows(operator.len())
+                .filter(|window| *window == operator)
+                .count();
+        }
+    }
+    Ok(count)
+}

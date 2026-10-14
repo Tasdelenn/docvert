@@ -86,3 +86,29 @@ cargo run -- -i belge.pdf --split -o sayfalar/
 
 - Kalan geliştirmeler: kuyrukta aşamalı yüzde; Pandoc sürücüsü; PDF→metin için
   ToUnicode tabanlı Identity-H desteği.
+
+## 3. Devir — Jev denetim katmanı (opt-in)
+
+- `cargo fmt`, `cargo clippy --all-targets` ve `cargo test` (12 uçtan uca + 17
+  birim testi) temiz geçiyor.
+- **Karar testi (Jev, OpenRouter üzerinden):** "DocVert ikilisine çalışma-zamanı
+  Jev katmanı eklenmeli mi?" → `jev_decide` adaylar arasında `hibrit_optin`'i
+  seçti (p=0.94); `runtime_zorunlu` üç gereksinimin hepsini ihlal etti.
+  `jev_noul`: "zorunlu çalışma-zamanı katmanı maliyetine değer" p=0.12 (unlikely),
+  "mevcut deterministik mekanizma yeterli" p=0.85 (likely).
+- **Son commit denetimi:** `jev_gate` ile 5 tamamlanma iddiası kanıta karşı
+  **5/5 verified** (testler, Türkçe korunması, DOCX/LibreOffice, merge/split,
+  Identity-H sınırı). Patch-review rubriği "escalate" dedi çünkü özet patch
+  yerine değişiklik özeti verildi (confidence düşük) — Jev'in kanıt yetersizken
+  kör onay vermediğinin göstergesi.
+- **Eklenen katman (`core/jev.rs`, `core/qa.rs`):** `--verify` / `DOCVERT_JEV=1`
+  + `OPENROUTER_API_KEY` ile dönüşüm çıktısını Jev'e denetletir. İstek `curl`
+  ile OpenRouter Decisions API'sine gider (yeni ağır bağımlılık yok). Yalnızca
+  metin hedefleri (`txt`/`md`/`html`) denetlenir; kanıt deterministiktir (PDF
+  sayfa sayısı + `Tj`/`TJ` operatör sayısı + çıktı metin uzunluğu/örneği).
+  Karar değil, danışman uyarı üretir; anahtar/ağ yoksa sessizce atlanır.
+- **Canlı doğrulama:** Identity-H boş çıkarım → `⚠ p=0.07`; basit fontlu PDF →
+  `txt` tam çıkarım → `✓ p=0.90 ($0.000021)`. Metin olmayan hedefler atlanır.
+- Not: Bu katman `PDF→TXT`'in bilinen Identity-H sınırını da görünür kıldı;
+  gerçek dünya PDF'lerinin çoğunda lopdf çıkarımı boş dönüyor. Asıl iyileştirme
+  ToUnicode tabanlı çıkarımdır (gelecek iş).

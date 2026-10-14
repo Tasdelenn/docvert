@@ -123,6 +123,7 @@ yolu, ekranın en alt satırında ise kısayol tuşlarının özeti görünür.
 | `--recursive`        | `-r` | Klasörün alt klasörlerini de tara                 |
 | `--quality <1-100>`  |      | Görsel kalitesi/ölçeği (varsayılan 80)            |
 | `--compress <0-9>`   |      | PDF akış sıkıştırma seviyesi (varsayılan 6)       |
+| `--verify`           |      | Çıktıyı Jev ile denetle (OpenRouter anahtarı gerekir) |
 | `--explain`          |      | Parametreleri Türkçe, TLDR tarzında açıkla        |
 | `--help`             | `-h` | Yardımı göster                                    |
 | `--version`          | `-V` | Sürümü göster                                     |
@@ -175,6 +176,34 @@ sudo pacman -S tesseract tesseract-data-tur
 > Not: `--quality` görsellerin PDF/DOCX'e gömülmeden önceki ölçeğini belirler
 > (100 = tam çözünürlük). `--compress` ise PDF metin akışlarını istenen deflate
 > seviyesinde sıkıştırır.
+
+---
+
+## Jev ile denetim (opsiyonel)
+
+DocVert, istenirse dönüşüm çıktısını [TypeSafe Jev](https://openrouter.ai/typesafe/jev-1.13)
+ile denetleyebilir. Bu katman **opt-in** ve **danışman**dır: kararı etkilemez,
+yalnızca uyarı üretir; anahtar/ağ yoksa sessizce devre dışı kalır.
+
+- Etkinleştirme: `--verify` (veya `DOCVERT_JEV=1`) + ortamda `OPENROUTER_API_KEY`
+  (`sk-or-...`). İstek `curl` ile OpenRouter Decisions API'sine gider; ağır bir
+  HTTP bağımlılığı eklenmez.
+- Ne denetler: **metin çıktıları** (`txt`/`md`/`html`). Deterministik kanıt
+  toplar (kaynak biçim/boyut, PDF sayfa sayısı ve `Tj`/`TJ` operatör sayısı,
+  çıkarılan metnin uzunluğu ve örneği) ve "çıkarım kaynağın içeriğini yakaladı
+  mı?" sorusuna olasılık ister.
+- Örnekler:
+  - `pdf → txt`, Identity-H fontlu PDF'te boş çıkarım → `⚠ p=0.07` (yakalandı).
+  - basit/WinAnsi fontlu PDF → `txt` tam çıkarım → `✓ p=0.90, $0.000021`.
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+docvert -i belge.pdf -t txt -o belge.txt --verify
+```
+
+> Bilinen sınırlama: `pdf → txt/md/html` çıkarımı `lopdf` kullanır ve
+> Identity-H (CID) fontlu PDF'lerde (ör. LibreOffice veya bu aracın kendi
+> metin→PDF çıktısı) boş döner. `--verify` bu durumu açıkça işaretler.
 
 ---
 

@@ -30,6 +30,10 @@ pub fn explain_commands(args: &CliArgs) {
         "{}  PDF akış sıkıştırma seviyesi 0-9 (varsayılan 6)",
         "--compress".yellow()
     );
+    println!(
+        "{}    çıktıyı Jev ile denetle (OPENROUTER_API_KEY gerekir)",
+        "--verify".yellow()
+    );
     if !args.input.is_empty() {
         println!("\nGirdi: {} dosya/klasör", args.input.len());
     }
