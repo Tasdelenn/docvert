@@ -475,6 +475,7 @@ dependencies = [
  "clap",
  "colored",
  "crossterm",
+ "flate2",
  "image 0.25.10",
  "indicatif",
  "lopdf 0.32.0",

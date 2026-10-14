@@ -12,7 +12,7 @@ pub enum DocVertError {
     Pdf(#[from] lopdf::Error),
     #[error("Bu dönüşüm desteklenmiyor: .{from} → .{to}")]
     UnsupportedFormat { from: String, to: String },
-    #[error("'{program}' sürücüsü sistemde bulunamadı. LibreOffice veya Pandoc kurun.")]
+    #[error("'{program}' sürücüsü sistemde bulunamadı. Bu dönüşüm için gerekli harici aracı kurup tekrar deneyin.")]
     DriverUnavailable { program: String },
     #[error("Harici dönüştürücü başarısız oldu: {program}\n{details}")]
     ExternalCommand { program: String, details: String },

@@ -1,7 +1,7 @@
 //! `lopdf` üzerine kurulu temel PDF düzenleme işlemleri.
 use crate::{
     converters::ImageToPdfConverter,
-    core::{traits::DocumentConverter, DocVertError},
+    core::{traits::DocumentConverter, ConvertOptions, DocVertError},
 };
 use lopdf::{dictionary, Document, Object, ObjectId};
 use std::{
@@ -10,7 +10,11 @@ use std::{
 };
 
 /// Birden fazla PDF'i (ve desteklenen görselleri) tek PDF belgesinde birleştirir.
-pub fn merge_pdfs(inputs: Vec<PathBuf>, output: PathBuf) -> Result<(), DocVertError> {
+pub fn merge_pdfs(
+    inputs: Vec<PathBuf>,
+    output: PathBuf,
+    options: &ConvertOptions,
+) -> Result<(), DocVertError> {
     if inputs.is_empty() {
         return Err(DocVertError::InvalidInput(
             "Birleştirmek için en az bir dosya gerekir".into(),
@@ -31,20 +35,24 @@ pub fn merge_pdfs(inputs: Vec<PathBuf>, output: PathBuf) -> Result<(), DocVertEr
                 std::process::id(),
                 temporary_pdfs.len()
             ));
-            ImageToPdfConverter.convert(&input, &temp)?;
+            ImageToPdfConverter.convert(&input, &temp, options)?;
             temporary_pdfs.push(temp.clone());
             temp
         };
         documents.push(Document::load(pdf_path)?);
     }
-    let result = merge_documents(documents, &output);
+    let result = merge_documents(documents, &output, options);
     for temporary in temporary_pdfs {
         let _ = std::fs::remove_file(temporary);
     }
     result
 }
 
-fn merge_documents(mut documents: Vec<Document>, output: &Path) -> Result<(), DocVertError> {
+fn merge_documents(
+    mut documents: Vec<Document>,
+    output: &Path,
+    options: &ConvertOptions,
+) -> Result<(), DocVertError> {
     let mut merged = Document::with_version("1.5");
     let mut objects: BTreeMap<ObjectId, Object> = BTreeMap::new();
     let mut page_ids: Vec<ObjectId> = Vec::new();
@@ -84,6 +92,7 @@ fn merge_documents(mut documents: Vec<Document>, output: &Path) -> Result<(), Do
     merged.trailer.set("Root", catalog_id);
     merged.compress();
     merged.save(output)?;
+    crate::core::compress::apply_pdf_compression(output, options.compress_level)?;
     Ok(())
 }
 

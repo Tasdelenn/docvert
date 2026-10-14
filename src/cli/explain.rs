@@ -22,6 +22,14 @@ pub fn explain_commands(args: &CliArgs) {
         "--split".yellow()
     );
     println!("{}  klasör altlarını tara", "-r, --recursive".yellow());
+    println!(
+        "{}   görsel kalitesi/ölçeği 1-100 (varsayılan 80)",
+        "--quality".yellow()
+    );
+    println!(
+        "{}  PDF akış sıkıştırma seviyesi 0-9 (varsayılan 6)",
+        "--compress".yellow()
+    );
     if !args.input.is_empty() {
         println!("\nGirdi: {} dosya/klasör", args.input.len());
     }

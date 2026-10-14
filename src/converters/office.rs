@@ -1,4 +1,4 @@
-use crate::core::{traits::DocumentConverter, DocVertError};
+use crate::core::{format::Format, traits::DocumentConverter, ConvertOptions, DocVertError};
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -22,6 +22,37 @@ impl ExternalOfficeConverter {
                 })
         })
     }
+
+    fn handles_source(from: Format) -> bool {
+        matches!(
+            from,
+            Format::Doc
+                | Format::Docx
+                | Format::Odt
+                | Format::Rtf
+                | Format::Xls
+                | Format::Xlsx
+                | Format::Ods
+                | Format::Ppt
+                | Format::Pptx
+                | Format::Odp
+        )
+    }
+
+    fn handles_target(to: Format) -> bool {
+        matches!(
+            to,
+            Format::Pdf
+                | Format::Docx
+                | Format::Odt
+                | Format::Xlsx
+                | Format::Ods
+                | Format::Pptx
+                | Format::Odp
+                | Format::Txt
+                | Format::Html
+        )
+    }
 }
 
 impl DocumentConverter for ExternalOfficeConverter {
@@ -29,17 +60,16 @@ impl DocumentConverter for ExternalOfficeConverter {
         "LibreOffice Headless"
     }
 
-    fn can_handle(&self, from: &str, to: &str) -> bool {
-        matches!(
-            from,
-            "doc" | "docx" | "odt" | "rtf" | "xls" | "xlsx" | "ods" | "ppt" | "pptx" | "odp"
-        ) && matches!(
-            to,
-            "pdf" | "docx" | "odt" | "xlsx" | "ods" | "pptx" | "odp" | "txt" | "html"
-        )
+    fn can_handle(&self, from: Format, to: Format) -> bool {
+        Self::handles_source(from) && Self::handles_target(to)
     }
 
-    fn convert(&self, input: &Path, output: &Path) -> Result<(), DocVertError> {
+    fn convert(
+        &self,
+        input: &Path,
+        output: &Path,
+        _options: &ConvertOptions,
+    ) -> Result<(), DocVertError> {
         let parent = output
             .parent()
             .ok_or_else(|| DocVertError::Output(output.to_path_buf()))?;

@@ -1,5 +1,19 @@
+pub mod docx;
+pub mod image_to_docx;
 pub mod image_to_pdf;
+pub mod image_to_text;
 pub mod office;
+pub mod pdf_to_docx;
+pub mod pdf_to_text;
+pub mod text_output;
+pub mod text_to_docx;
+pub mod text_to_pdf;
 
+pub use image_to_docx::ImageToDocxConverter;
 pub use image_to_pdf::ImageToPdfConverter;
+pub use image_to_text::ImageToTextConverter;
 pub use office::ExternalOfficeConverter;
+pub use pdf_to_docx::PdfToDocxConverter;
+pub use pdf_to_text::PdfToTextConverter;
+pub use text_to_docx::TextToDocxConverter;
+pub use text_to_pdf::TextToPdfConverter;
