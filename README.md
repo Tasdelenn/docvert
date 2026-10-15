@@ -233,6 +233,35 @@ docvert -i belge.pdf -t txt -o belge.txt --verify
 - Anahtarı eklemek için: repo → **Settings → Secrets and variables → Actions**
   → **New repository secret**, ad `OPENROUTER_API_KEY`, değer `sk-or-...`.
 
+### CI nasıl çalışır? (ELI10)
+
+Şöyle düşün: ödevini kutuya attığın anda, senin yerine kontrol eden bir
+**robot** çalışır. Kodu her gönderişinde (commit/push) robot otomatik bakar:
+"yazı düzgün mü (biçim), kod kokusu var mı (clippy), sorular doğru cevaplı mı
+(testler)" ve sonucu PR'ın yanına **✓ / ✗** olarak asar.
+
+- **CI** (Continuous Integration) = o robot. **GitHub Actions** = robotun
+  çalıştığı bulut makinesi. `.github/workflows/*.yml` dosyaları = robotun
+  "yapılacaklar listesi".
+- Bu depoda iki robot var: **CI** (fmt/clippy/test) ve **Jev kapısı**
+  (PR iddialarını AI ile kanıta karşı doğrular).
+- **Kullanım:** bir branch aç, commit, push, PR aç — gerisi otomatik. Kırmızı
+  ✗ olursa **Details**'e (veya terminalde `gh run view <ID> --log-failed`)
+  bakıp düzelt ve tekrar push et; robot kendini yeniden çalıştırır.
+- **Gizli anahtar** (secret) koda girmez; repo **Settings → Secrets and
+  variables → Actions** altında saklanır ve robot çalışırken ortama konur.
+- **Faydası:** hatalar merge'den *önce*, insan eli değmeden yakalanır. İki
+  benzetme: commit = ödevi teslim etmek; CI = teslim anında çalışan otomatik
+  imla + test kontrolcüsü; secret = robotun kasasındaki anahtar.
+
+Yerelden izleme:
+
+```bash
+gh pr checks            # bu PR'ın kontrolleri (pass/fail/pending)
+gh run list --limit 5   # son çalışmalar
+gh run view <RUN_ID> --log-failed   # yalnızca başarısız adımın logu
+```
+
 ---
 
 ## Word / Excel / PowerPoint desteği (opsiyonel)
