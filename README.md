@@ -164,6 +164,8 @@ docvert -i "faturalar şubat/" -t pdf -o cikti/ --recursive
 | Office (docx/xlsx/pptx/…)     | `pdf`, `docx`, `txt`, `html` … (LibreOffice gerekir)           |
 
 Doğrudan bir motor yoksa dönüşüm, PDF üzerinden zincirlenir (ör. `md → pdf → html`).
+Sistemde **Pandoc** varsa, saf-Rust ve LibreOffice motorlarının kapsamadığı ek
+dönüşümler de açılır (ör. `docx → md`, `odt → html`); Pandoc otomatik bulunur.
 Görselden **gerçek metin** çıkarmak için sistemde **Tesseract OCR** gerekir; yoksa
 DocVert sessizce boş dosya üretmek yerine kurulum yönlendirmesi yapan bir hata verir:
 
@@ -231,6 +233,35 @@ docvert -i belge.pdf -t txt -o belge.txt --verify
 - Anahtarı eklemek için: repo → **Settings → Secrets and variables → Actions**
   → **New repository secret**, ad `OPENROUTER_API_KEY`, değer `sk-or-...`.
 
+### CI nasıl çalışır? (ELI10)
+
+Şöyle düşün: ödevini kutuya attığın anda, senin yerine kontrol eden bir
+**robot** çalışır. Kodu her gönderişinde (commit/push) robot otomatik bakar:
+"yazı düzgün mü (biçim), kod kokusu var mı (clippy), sorular doğru cevaplı mı
+(testler)" ve sonucu PR'ın yanına **✓ / ✗** olarak asar.
+
+- **CI** (Continuous Integration) = o robot. **GitHub Actions** = robotun
+  çalıştığı bulut makinesi. `.github/workflows/*.yml` dosyaları = robotun
+  "yapılacaklar listesi".
+- Bu depoda iki robot var: **CI** (fmt/clippy/test) ve **Jev kapısı**
+  (PR iddialarını AI ile kanıta karşı doğrular).
+- **Kullanım:** bir branch aç, commit, push, PR aç — gerisi otomatik. Kırmızı
+  ✗ olursa **Details**'e (veya terminalde `gh run view <ID> --log-failed`)
+  bakıp düzelt ve tekrar push et; robot kendini yeniden çalıştırır.
+- **Gizli anahtar** (secret) koda girmez; repo **Settings → Secrets and
+  variables → Actions** altında saklanır ve robot çalışırken ortama konur.
+- **Faydası:** hatalar merge'den *önce*, insan eli değmeden yakalanır. İki
+  benzetme: commit = ödevi teslim etmek; CI = teslim anında çalışan otomatik
+  imla + test kontrolcüsü; secret = robotun kasasındaki anahtar.
+
+Yerelden izleme:
+
+```bash
+gh pr checks            # bu PR'ın kontrolleri (pass/fail/pending)
+gh run list --limit 5   # son çalışmalar
+gh run view <RUN_ID> --log-failed   # yalnızca başarısız adımın logu
+```
+
 ---
 
 ## Word / Excel / PowerPoint desteği (opsiyonel)
@@ -257,6 +288,25 @@ Kurulup kurulmadığını doğrulamak için: `libreoffice --version`.
 
 ---
 
+## Pandoc desteği (opsiyonel)
+
+Sistemde **Pandoc** varsa DocVert onu otomatik bulur ve saf-Rust/LibreOffice
+motorlarının kapsamadığı dönüşümleri açar (ör. `docx → md`, `odt → html`,
+`rtf → docx`). PDF hedefi kasten Pandoc'a bırakılmaz; PDF, saf-Rust veya
+LibreOffice motorlarıyla üretilir.
+
+```bash
+# Debian/Ubuntu
+sudo apt install pandoc
+# Arch
+sudo pacman -S pandoc
+```
+
+Doğrulamak için: `pandoc --version`. Kurulu değilse yalnızca Pandoc'a özel
+hedefler devre dışı kalır; diğer dönüşümler etkilenmez.
+
+---
+
 ## Testleri çalıştırma
 
 Depoya, gerçek görsel dosyalarıyla dönüşümü uçtan uca doğrulayan testler dahildir:
@@ -279,7 +329,7 @@ cargo clippy --all-targets
 ```text
 src/
   cli/          # Komut satırı argümanları ve --explain açıklamaları
-  converters/   # Image → PDF (saf Rust) ve LibreOffice motoru
+  converters/   # Image → PDF (saf Rust), LibreOffice ve Pandoc motorları
   core/         # Hata türleri, DocumentConverter trait'i, registry, PDF işlemleri
   tui/          # Ratatui ile fare/klavye destekli arayüz
 tests/          # Uçtan uca dönüşüm testleri (görsel → PDF, merge, split)

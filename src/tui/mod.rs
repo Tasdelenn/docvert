@@ -31,6 +31,7 @@ struct QueueJob {
     output: PathBuf,
     state: JobState,
     note: Option<String>,
+    progress: f32,
 }
 #[derive(Clone, Debug)]
 struct JobUpdate {
@@ -38,6 +39,7 @@ struct JobUpdate {
     output: PathBuf,
     state: JobState,
     note: Option<String>,
+    progress: f32,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Focus {
@@ -196,6 +198,7 @@ impl App {
                 output: output.clone(),
                 state: JobState::Waiting,
                 note: None,
+                progress: 0.0,
             });
             let registry = Arc::clone(&self.registry);
             let sender = self.sender.clone();
@@ -208,8 +211,23 @@ impl App {
                     output: output.clone(),
                     state: JobState::Running,
                     note: None,
+                    progress: 0.05,
                 });
-                let (state, note) = match registry.convert(&input, &output, &options) {
+                // Gerçek aşama ilerlemesini (0.0-1.0) kuyruğa aktar.
+                let progress_sender = sender.clone();
+                let progress_input = input.clone();
+                let progress_output = output.clone();
+                let converted =
+                    registry.convert_with_progress(&input, &output, &options, move |fraction| {
+                        let _ = progress_sender.send(JobUpdate {
+                            input: progress_input.clone(),
+                            output: progress_output.clone(),
+                            state: JobState::Running,
+                            note: None,
+                            progress: fraction,
+                        });
+                    });
+                let (state, note) = match converted {
                     Ok(()) => {
                         let note = if verify {
                             Some(match crate::core::qa::review(&input, target, &output) {
@@ -235,6 +253,7 @@ impl App {
                     output,
                     state,
                     note,
+                    progress: 1.0,
                 });
             });
         }
@@ -254,6 +273,7 @@ impl App {
                 }
                 job.state = update.state;
                 job.note = update.note;
+                job.progress = update.progress;
             }
         }
         // Yeni üretilen dosya sol panelde hemen görünsün.
@@ -700,8 +720,14 @@ fn draw(frame: &mut ratatui::Frame, app: &App, targets: &[Format]) {
     frame.render_widget(drivers_para, areas.preview_drivers);
 
     // ---- Alt panel: dönüşüm kuyruğu ----
+    let done = app
+        .queue
+        .iter()
+        .filter(|job| matches!(job.state, JobState::Done))
+        .count();
+    let total = app.queue.len();
     let queue_block = Block::default()
-        .title(" Dönüşüm kuyruğu ve ilerleme ")
+        .title(format!(" Dönüşüm kuyruğu ve ilerleme — {done}/{total} "))
         .borders(Borders::ALL);
     frame.render_widget(queue_block, areas.queue);
     if app.queue.is_empty() {
@@ -726,20 +752,29 @@ fn draw(frame: &mut ratatui::Frame, app: &App, targets: &[Format]) {
             .take(rows.len())
             .zip(rows.iter().copied())
         {
-            let (label, ratio, color) = match &job.state {
-                JobState::Waiting => ("Bekliyor", 0.0, Color::DarkGray),
-                JobState::Running => ("İşleniyor", 0.55, Color::Yellow),
-                JobState::Done => ("Tamamlandı", 1.0, Color::Green),
-                JobState::Failed(error) => (error.as_str(), 1.0, Color::Red),
+            let (label, color) = match &job.state {
+                JobState::Waiting => ("Bekliyor", Color::DarkGray),
+                JobState::Running => ("İşleniyor", Color::Yellow),
+                JobState::Done => ("Tamamlandı", Color::Green),
+                JobState::Failed(error) => (error.as_str(), Color::Red),
+            };
+            let ratio = match &job.state {
+                JobState::Waiting => 0.0,
+                JobState::Running => job.progress.clamp(0.0, 1.0),
+                JobState::Done | JobState::Failed(_) => 1.0,
+            };
+            let percent = match &job.state {
+                JobState::Running | JobState::Done => format!(" %{:.0}", ratio * 100.0),
+                JobState::Waiting | JobState::Failed(_) => String::new(),
             };
             let title = match &job.note {
                 Some(note) => format!(
-                    "{} → {}  ({label})  {note}",
+                    "{} → {}  ({label}{percent})  {note}",
                     job.input.file_name().unwrap_or_default().to_string_lossy(),
                     job.output.file_name().unwrap_or_default().to_string_lossy()
                 ),
                 None => format!(
-                    "{} → {}  ({label})",
+                    "{} → {}  ({label}{percent})",
                     job.input.file_name().unwrap_or_default().to_string_lossy(),
                     job.output.file_name().unwrap_or_default().to_string_lossy()
                 ),
@@ -748,7 +783,7 @@ fn draw(frame: &mut ratatui::Frame, app: &App, targets: &[Format]) {
                 Gauge::default()
                     .block(Block::default().title(title))
                     .gauge_style(Style::default().fg(color))
-                    .ratio(ratio),
+                    .ratio(ratio as f64),
                 area,
             );
         }

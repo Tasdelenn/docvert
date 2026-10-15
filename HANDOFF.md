@@ -155,3 +155,31 @@ cargo run -- -i belge.pdf --split -o sayfalar/
   CMap bfchar/bfrange, glyph adı çözümleme.
 - Kalan iyileştirmeler: çok sütunlu düzen ve `usecmap`'li CMap'ler; Pandoc
   sürücüsü; kuyrukta aşamalı yüzde.
+
+## 6. Devir — usecmap/çok sütun, Pandoc sürücüsü, aşamalı ilerleme
+
+- `cargo fmt`, `cargo clippy --all-targets` ve `cargo test` (16 uçtan uca + 32
+  birim testi) temiz geçiyor.
+- **PDF metin çıkarımı (`core/pdf_text.rs`) konum tabanlı yeniden yazıldı.**
+  - Parçalar `BT/Tf/Tm/Td/TD/TL/T*/Tj/'/"/TJ` durumu izlenerek (satır orijini +
+    yatay ilerleme) toplanır; satırlar y'ye göre gruplanır.
+  - **Çok sütun:** x aralıkları birleştirilerek sütun bantları bulunur; 2-3 bant
+    dikeyde çakışıyorsa sütun-sütun okuma sırası, aksi hâlde tek sütun uygulanır.
+    (Sayfa numarası gibi uzak tek satırlar yanlışlıkla sütun sayılmaz.)
+  - **usecmap:** ToUnicode içindeki `/Ad usecmap` temel CMap'leri, belgeye gömülü
+    CMap akışlarından (`CMapName` ile) çözülüp birleştirilir; `visited` + derinlik
+    sınırıyla döngü koruması. (Kritik: `BT` satır matrisini sıfırlar — aksi hâlde
+    ardışık metin nesneleri konumları kaydırıyordu.)
+- **Pandoc sürücüsü (`converters/pandoc.rs`):** `pandoc` varsa otomatik
+  kaydedilir; saf-Rust/LibreOffice'in kapsamadığı hedefleri açar (docx/odt/rtf →
+  md/html/txt/…). PDF hedefi dışarıda (LaTeX gerekir). Registry sırası:
+  saf-Rust → LibreOffice → Pandoc; mevcut davranış korunur.
+- **TUI aşamalı ilerleme:** `ConverterRegistry::convert_with_progress` adım
+  ilerlemesini bildirir (tek adım 0.1→1.0; zincir 0.05→0.5→1.0); TUI kuyruğu
+  gerçek yüzdeyi ve `tamamlanan/toplam` sayacını gösterir.
+- Testler: çok sütun okuma sırası, tek sütun sırası, usecmap birleştirme,
+  format→Pandoc adı eşlemesi (PDF hedef değil), registry ilerlemesi
+  (doğrudan/zincirli), Pandoc `docx → md` (kurulu değilse atlanır).
+- Kalan iyileştirmeler: `begincidrange`/CID tabanlı eşlemeler; çok sütun için
+  font metrikli kesin genişlik; Pandoc PDF yolu için LaTeX motoru algılama;
+  kuyrukta adım adı (ara format) gösterimi.
