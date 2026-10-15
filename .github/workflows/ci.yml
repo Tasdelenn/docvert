@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    name: fmt / clippy / test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust kurulumu
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Derleme önbelleği
+        uses: Swatinem/rust-cache@v2
+
+      - name: Biçim denetimi
+        run: cargo fmt --all --check
+
+      - name: Clippy (uyarılar hata)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Testler
+        run: cargo test --all-targets

@@ -1,0 +1,59 @@
+name: Jev Gate
+
+# Bu iş, PR'larda değişikliğin iddialarını Jev ile kanıta karşı doğrular.
+# OPENROUTER_API_KEY deposu gizli anahtarı (secret) tanımlı değilse betik
+# sessizce atlar ve CI bloke edilmez. Anahtar eklemek için:
+#   Settings -> Secrets and variables -> Actions -> New repository secret
+#   ad: OPENROUTER_API_KEY, değer: sk-or-...
+
+on:
+  pull_request:
+
+jobs:
+  jev:
+    name: Jev iddia doğrulama
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rust kurulumu
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Derleme önbelleği
+        uses: Swatinem/rust-cache@v2
+
+      - name: Kanıt logunu topla (fmt / clippy / test)
+        run: |
+          {
+            echo "== cargo fmt --all --check =="
+            cargo fmt --all --check && echo "fmt: ok" || echo "fmt: FAIL"
+            echo "== cargo clippy --all-targets -- -D warnings =="
+            cargo clippy --all-targets -- -D warnings 2>&1 | tail -20
+            echo "clippy: done"
+            echo "== cargo test --all-targets =="
+            cargo test --all-targets 2>&1
+          } | tee /tmp/tests.log
+
+      - name: PR diff'ini hazırla
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}" || true
+          git diff "origin/${{ github.base_ref }}...HEAD" > /tmp/pr.diff || true
+          wc -l /tmp/pr.diff
+
+      - name: PR başlığı ve gövdesini yaz (istek)
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n\n%s\n' "$TITLE" "$BODY" > /tmp/request.txt
+
+      - name: Jev kapısı
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          python3 scripts/jev_gate.py \
+            --request-file /tmp/request.txt \
+            --claims-file .github/jev-claims.txt \
+            --evidence-file /tmp/tests.log \
+            --diff-file /tmp/pr.diff

@@ -332,3 +332,52 @@ fn simple_font_pdf_extracts_text() {
     let extracted = docvert::core::pdf_text::extract_text(&pdf).unwrap();
     assert!(extracted.contains("Hello ASCII"), "çıkarım: {extracted:?}");
 }
+
+/// ToUnicode olmadan, Encoding/Differences ile eşlenen tek baytlık font.
+#[test]
+fn differences_encoding_is_honored() {
+    let dir = tempfile::tempdir().unwrap();
+    let pdf = dir.path().join("differences.pdf");
+    // Kodlar: 65 -> scedilla (ş), 66 -> space, 67 -> exclam (!). Metin: <414243>.
+    let content = b"BT /F1 24 Tf 72 700 Td <414243> Tj ET";
+    let mut out: Vec<u8> = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    let objects: Vec<Vec<u8>> = vec![
+        b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec(),
+        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>".to_vec(),
+        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding<</Type/Encoding/Differences[65/scedilla 66/space 67/exclam]>>>>".to_vec(),
+        format!(
+            "<</Length {}>>\nstream\n{}\nendstream",
+            content.len(),
+            String::from_utf8_lossy(content)
+        )
+        .into_bytes(),
+    ];
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+        out.extend_from_slice(object);
+        out.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
+    out.extend_from_slice(b"0000000000 65535 f \n");
+    for offset in &offsets {
+        out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer\n<</Size {}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .as_bytes(),
+    );
+    std::fs::write(&pdf, out).unwrap();
+
+    let extracted = docvert::core::pdf_text::extract_text(&pdf).unwrap();
+    assert!(
+        extracted.contains("ş !"),
+        "Differences eşlemesi: {extracted:?}"
+    );
+}

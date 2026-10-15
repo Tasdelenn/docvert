@@ -13,8 +13,10 @@ use std::{collections::HashMap, path::Path};
 struct FontInfo {
     /// Girdi kodları iki baytlı mı (Type0/Identity-H)?
     two_byte: bool,
-    /// Kod noktası -> Unicode metin.
+    /// Kod noktası -> Unicode metin (ToUnicode'dan).
     cmap: HashMap<u32, String>,
+    /// Kod noktası -> karakter (Encoding Differences'tan, ToUnicode yoksa).
+    differences: HashMap<u32, char>,
 }
 
 /// PDF'teki tüm sayfaların metnini, ToUnicode eşlemelerini kullanarak çıkarır.
@@ -47,9 +49,131 @@ fn build_fonts(document: &Document, page_id: ObjectId) -> HashMap<Vec<u8>, FontI
                 cmap = parse_cmap(&data);
             }
         }
-        fonts.insert(name, FontInfo { two_byte, cmap });
+        let differences = differences_map(dictionary);
+        fonts.insert(
+            name,
+            FontInfo {
+                two_byte,
+                cmap,
+                differences,
+            },
+        );
     }
     fonts
+}
+
+/// Fontun `Encoding` sözlüğündeki `Differences` dizisinden kod -> karakter
+/// eşlemesi çıkarır (ToUnicode yoksa kullanılır).
+fn differences_map(dictionary: &lopdf::Dictionary) -> HashMap<u32, char> {
+    let mut map = HashMap::new();
+    let Ok(encoding) = dictionary.get(b"Encoding").and_then(Object::as_dict) else {
+        return map;
+    };
+    let Ok(differences) = encoding.get(b"Differences").and_then(Object::as_array) else {
+        return map;
+    };
+    let mut code: u32 = 0;
+    for item in differences {
+        match item {
+            Object::Integer(value) => code = (*value).max(0) as u32,
+            Object::Real(value) => code = (*value).max(0.0) as u32,
+            Object::Name(bytes) => {
+                if let Some(character) = glyph_to_char(&String::from_utf8_lossy(bytes)) {
+                    map.insert(code, character);
+                }
+                code += 1;
+            }
+            _ => {}
+        }
+    }
+    map
+}
+
+/// Adobe glyph adını Unicode karaktere çevirir (yaygın adlar + Türkçe harfler).
+fn glyph_to_char(name: &str) -> Option<char> {
+    let base = name.split('.').next().unwrap_or(name);
+    // uniXXXX -> U+XXXX ; uXXXX -> U+XXXX
+    if let Some(hex) = base.strip_prefix("uni") {
+        if let Ok(value) = u32::from_str_radix(hex, 16) {
+            return char::from_u32(value);
+        }
+    }
+    if let Some(hex) = base.strip_prefix('u') {
+        if hex.len() == 4 {
+            if let Ok(value) = u32::from_str_radix(hex, 16) {
+                return char::from_u32(value);
+            }
+        }
+    }
+    if base.len() == 1 {
+        return base.chars().next();
+    }
+    Some(match base {
+        "space" => ' ',
+        "exclam" => '!',
+        "quotedbl" => '"',
+        "numbersign" => '#',
+        "dollar" => '$',
+        "percent" => '%',
+        "ampersand" => '&',
+        "quotesingle" => '\'',
+        "parenleft" => '(',
+        "parenright" => ')',
+        "asterisk" => '*',
+        "plus" => '+',
+        "comma" => ',',
+        "hyphen" | "minus" => '-',
+        "period" => '.',
+        "slash" => '/',
+        "zero" => '0',
+        "one" => '1',
+        "two" => '2',
+        "three" => '3',
+        "four" => '4',
+        "five" => '5',
+        "six" => '6',
+        "seven" => '7',
+        "eight" => '8',
+        "nine" => '9',
+        "colon" => ':',
+        "semicolon" => ';',
+        "less" => '<',
+        "equal" => '=',
+        "greater" => '>',
+        "question" => '?',
+        "at" => '@',
+        "bracketleft" => '[',
+        "backslash" => '\\',
+        "bracketright" => ']',
+        "asciicircum" => '^',
+        "underscore" => '_',
+        "grave" => '`',
+        "braceleft" => '{',
+        "bar" => '|',
+        "braceright" => '}',
+        "asciitilde" => '~',
+        // Türkçe ve yaygın Latin-1 adları
+        "scedilla" => 'ş',
+        "Scedilla" => 'Ş',
+        "dotlessi" => 'ı',
+        "gbreve" => 'ğ',
+        "Gbreve" => 'Ğ',
+        "Idotaccent" => 'İ',
+        "ccedilla" => 'ç',
+        "Ccedilla" => 'Ç',
+        "odieresis" => 'ö',
+        "Odieresis" => 'Ö',
+        "udieresis" => 'ü',
+        "Udieresis" => 'Ü',
+        "adieresis" => 'ä',
+        "Adieresis" => 'Ä',
+        "germandbls" => 'ß',
+        "eacute" => 'é',
+        "egrave" => 'è',
+        "agrave" => 'à',
+        "nbspace" => ' ',
+        _ => return None,
+    })
 }
 
 /// ToUnicode CMap akışını `kod -> metin` eşlemesine çevirir.
@@ -516,12 +640,9 @@ fn decode(bytes: &[u8], font: Option<&FontInfo>) -> String {
             let mut index = 0;
             while index + 1 < bytes.len() {
                 let code = (u32::from(bytes[index]) << 8) | u32::from(bytes[index + 1]);
-                result.push_str(
-                    info.cmap
-                        .get(&code)
-                        .map(String::as_str)
-                        .unwrap_or("\u{FFFD}"),
-                );
+                if let Some(mapped) = info.cmap.get(&code) {
+                    result.push_str(mapped);
+                }
                 index += 2;
             }
             result
@@ -529,9 +650,13 @@ fn decode(bytes: &[u8], font: Option<&FontInfo>) -> String {
         Some(info) => {
             let mut result = String::new();
             for byte in bytes {
-                match info.cmap.get(&u32::from(*byte)) {
-                    Some(mapped) => result.push_str(mapped),
-                    None => result.push(single_byte_char(*byte)),
+                let code = u32::from(*byte);
+                if let Some(mapped) = info.cmap.get(&code) {
+                    result.push_str(mapped);
+                } else if let Some(character) = info.differences.get(&code) {
+                    result.push(*character);
+                } else {
+                    result.push(single_byte_char(*byte));
                 }
             }
             result
@@ -612,6 +737,7 @@ mod tests {
         let info = FontInfo {
             two_byte: true,
             cmap,
+            differences: HashMap::new(),
         };
         assert_eq!(decode(&[0x01, 0x5F, 0x00, 0x41], Some(&info)), "şA");
     }
@@ -619,5 +745,27 @@ mod tests {
     #[test]
     fn single_byte_falls_back_to_ascii() {
         assert_eq!(decode(b"Hi", None), "Hi");
+    }
+
+    #[test]
+    fn glyph_names_map_to_characters() {
+        assert_eq!(glyph_to_char("A"), Some('A'));
+        assert_eq!(glyph_to_char("space"), Some(' '));
+        assert_eq!(glyph_to_char("scedilla"), Some('ş'));
+        assert_eq!(glyph_to_char("dotlessi"), Some('ı'));
+        assert_eq!(glyph_to_char("uni011F"), Some('ğ'));
+        assert_eq!(glyph_to_char("gbreve.alt"), Some('ğ'));
+        assert_eq!(glyph_to_char("bilinmeyen"), None);
+    }
+
+    #[test]
+    fn unmapped_two_byte_codes_are_skipped() {
+        let info = FontInfo {
+            two_byte: true,
+            cmap: HashMap::from([(0x0041u32, "A".to_string())]),
+            differences: HashMap::new(),
+        };
+        // 0x0041 -> "A"; 0x0100 eşlenmemiş -> atlanır (yer tutucu yok).
+        assert_eq!(decode(&[0x00, 0x41, 0x01, 0x00], Some(&info)), "A");
     }
 }

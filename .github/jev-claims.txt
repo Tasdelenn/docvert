@@ -1,0 +1,10 @@
+# Jev kapısının her PR'da doğrulayacağı iddialar.
+# Her satır bir iddiadır; '#' ile başlayan satırlar yorumdur.
+# Kanıt olarak: CI test çıktısı + PR diff'i + PR başlık/gövdesi kullanılır.
+#
+# Değişikliğe özel iddialarınızı buraya ekleyin; örn:
+#   - Yeni dönüşüm X -> Y çalışıyor.
+#   - Türkçe karakterler korunuyor.
+
+cargo test tüm testleri geçiyor (birim + entegrasyon).
+cargo fmt --check ve clippy temiz geçiyor.

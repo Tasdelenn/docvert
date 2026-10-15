@@ -134,3 +134,24 @@ cargo run -- -i belge.pdf --split -o sayfalar/
 - `jev_gate` ile son commit gerçek per-file diff'lerle denetlendi: 3 verified,
   1 unsupported (iddianın kanıtı diff'e konmadığı için — Jev kanıta bağlı
   çalışıyor), 2 review; patch review yine `escalate` (özet diff + düşük güven).
+
+## 5. Devir — CI + Jev kapısı ve çıkarım sağlamlaştırma
+
+- `cargo fmt`, `cargo clippy --all-targets` ve `cargo test` (15 uçtan uca + 24
+  birim testi) temiz geçiyor.
+- **CI (`.github/workflows/ci.yml`):** push/PR'da fmt + clippy (`-D warnings`) +
+  test.
+- **Jev kapısı (`.github/workflows/jev-gate.yml` + `scripts/jev_gate.py`):**
+  PR'larda `.github/jev-claims.txt` iddialarını CI kanıtı (fmt/clippy/test logu)
+  ve PR diff'i ile Jev'e doğrulatır; p < 0.5 iddiada iş başarısız olur. Anahtar
+  yoksa sessizce atlar. Betik stdlib python; yerelde de çalışır.
+  - Ders: Jev kanıta bağlı; kanıt logu iddiaları kapsamazsa doğru şekilde
+    "review/contradicted" döner (test edildi).
+- **Çıkarım sağlamlaştırma (`core/pdf_text.rs`):** `Encoding/Differences`
+  desteği (glyph adı → Unicode; Türkçe adlar `scedilla`, `dotlessi`, `gbreve`,
+  `Idotaccent` dahil) ve ToUnicode yoksa Differences → CP1252 sırası. Eşlenmeyen
+  iki baytlık kodlar artık `U+FFFD` yerine atlanır.
+- Testler: Türkçe pdf round-trip, basit font çıkarımı, Differences eşlemesi,
+  CMap bfchar/bfrange, glyph adı çözümleme.
+- Kalan iyileştirmeler: çok sütunlu düzen ve `usecmap`'li CMap'ler; Pandoc
+  sürücüsü; kuyrukta aşamalı yüzde.

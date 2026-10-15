@@ -209,6 +209,30 @@ docvert -i belge.pdf -t txt -o belge.txt --verify
 
 ---
 
+## CI ve Jev kapısı (GitHub Actions)
+
+- `.github/workflows/ci.yml`: her push ve PR'da `cargo fmt --all --check`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test --all-targets`.
+- `.github/workflows/jev-gate.yml`: PR'larda `.github/jev-claims.txt` içindeki
+  iddiaları, CI kanıtı (fmt/clippy/test logu) ve PR diff'i ile Jev'e
+  doğrulatır. Düşük olasılıklı (p < 0.5) bir iddia çıkarsa iş başarısız olur.
+  `OPENROUTER_API_KEY` deposu gizli anahtarı yoksa betik sessizce atlar
+  (fork'lar/katkıcılar bloke olmaz).
+- Betik `scripts/jev_gate.py` yerelde de çalışır:
+  ```bash
+  export OPENROUTER_API_KEY=sk-or-...
+  cargo test --all-targets 2>&1 | tee /tmp/tests.log
+  git show HEAD --format= > /tmp/pr.diff
+  python3 scripts/jev_gate.py \
+    --request "Yapılan değişikliğin özeti" \
+    --claims-file .github/jev-claims.txt \
+    --evidence-file /tmp/tests.log --diff-file /tmp/pr.diff
+  ```
+- Anahtarı eklemek için: repo → **Settings → Secrets and variables → Actions**
+  → **New repository secret**, ad `OPENROUTER_API_KEY`, değer `sk-or-...`.
+
+---
+
 ## Word / Excel / PowerPoint desteği (opsiyonel)
 
 Görsel → PDF dönüşümü ve PDF birleştirme/ayırma **tamamen Rust** ile, hiçbir ek
