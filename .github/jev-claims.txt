@@ -8,3 +8,7 @@
 
 cargo test tüm testleri geçiyor (birim + entegrasyon).
 cargo fmt --check ve clippy temiz geçiyor.
+Metin çıkarımı çok sütunlu PDF'lerde sütun-sütun okuma sırası uygular.
+ToUnicode CMap'lerindeki usecmap temel CMap'leri belgeye gömülü CMap'lerden çözülüp birleştirilir.
+Pandoc kuruluysa saf-Rust/LibreOffice'in kapsamadığı ek dönüşümler açılır; PDF hedefi Pandoc'a bırakılmaz.
+TUI dönüşüm kuyruğu gerçek aşamalı yüzdeyi ve tamamlanan/toplam sayacını gösterir.

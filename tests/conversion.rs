@@ -333,6 +333,32 @@ fn simple_font_pdf_extracts_text() {
     assert!(extracted.contains("Hello ASCII"), "çıkarım: {extracted:?}");
 }
 
+/// Pandoc kuruluysa DOCX → Markdown doğrudan dönüşmeli (saf-Rust ve
+/// LibreOffice bu hedefi kapsamaz). Kurulu değilse test sessizce atlanır.
+#[test]
+fn docx_becomes_markdown_with_pandoc() {
+    if docvert::converters::ExternalPandocConverter::detect().is_none() {
+        eprintln!("pandoc bulunamadı; DOCX → Markdown testi atlandı");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("kaynak.txt");
+    std::fs::write(&source, "Başlık\n\nBir paragraf.\n").unwrap();
+    let docx = dir.path().join("kaynak.docx");
+    let markdown = dir.path().join("kaynak.md");
+    let registry = docvert::core::registry::ConverterRegistry::with_detected_drivers();
+
+    registry
+        .convert(&source, &docx, &ConvertOptions::default())
+        .expect("metin → docx başarısız");
+    registry
+        .convert(&docx, &markdown, &ConvertOptions::default())
+        .expect("pandoc docx → markdown başarısız");
+
+    let text = std::fs::read_to_string(&markdown).unwrap();
+    assert!(text.contains("Başlık"), "markdown çıktısı: {text:?}");
+}
+
 /// ToUnicode olmadan, Encoding/Differences ile eşlenen tek baytlık font.
 #[test]
 fn differences_encoding_is_honored() {

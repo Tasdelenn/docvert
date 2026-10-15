@@ -164,6 +164,8 @@ docvert -i "faturalar şubat/" -t pdf -o cikti/ --recursive
 | Office (docx/xlsx/pptx/…)     | `pdf`, `docx`, `txt`, `html` … (LibreOffice gerekir)           |
 
 Doğrudan bir motor yoksa dönüşüm, PDF üzerinden zincirlenir (ör. `md → pdf → html`).
+Sistemde **Pandoc** varsa, saf-Rust ve LibreOffice motorlarının kapsamadığı ek
+dönüşümler de açılır (ör. `docx → md`, `odt → html`); Pandoc otomatik bulunur.
 Görselden **gerçek metin** çıkarmak için sistemde **Tesseract OCR** gerekir; yoksa
 DocVert sessizce boş dosya üretmek yerine kurulum yönlendirmesi yapan bir hata verir:
 
@@ -257,6 +259,25 @@ Kurulup kurulmadığını doğrulamak için: `libreoffice --version`.
 
 ---
 
+## Pandoc desteği (opsiyonel)
+
+Sistemde **Pandoc** varsa DocVert onu otomatik bulur ve saf-Rust/LibreOffice
+motorlarının kapsamadığı dönüşümleri açar (ör. `docx → md`, `odt → html`,
+`rtf → docx`). PDF hedefi kasten Pandoc'a bırakılmaz; PDF, saf-Rust veya
+LibreOffice motorlarıyla üretilir.
+
+```bash
+# Debian/Ubuntu
+sudo apt install pandoc
+# Arch
+sudo pacman -S pandoc
+```
+
+Doğrulamak için: `pandoc --version`. Kurulu değilse yalnızca Pandoc'a özel
+hedefler devre dışı kalır; diğer dönüşümler etkilenmez.
+
+---
+
 ## Testleri çalıştırma
 
 Depoya, gerçek görsel dosyalarıyla dönüşümü uçtan uca doğrulayan testler dahildir:
@@ -279,7 +300,7 @@ cargo clippy --all-targets
 ```text
 src/
   cli/          # Komut satırı argümanları ve --explain açıklamaları
-  converters/   # Image → PDF (saf Rust) ve LibreOffice motoru
+  converters/   # Image → PDF (saf Rust), LibreOffice ve Pandoc motorları
   core/         # Hata türleri, DocumentConverter trait'i, registry, PDF işlemleri
   tui/          # Ratatui ile fare/klavye destekli arayüz
 tests/          # Uçtan uca dönüşüm testleri (görsel → PDF, merge, split)

@@ -1,7 +1,8 @@
 use crate::{
     converters::{
-        ExternalOfficeConverter, ImageToDocxConverter, ImageToPdfConverter, ImageToTextConverter,
-        PdfToDocxConverter, PdfToTextConverter, TextToDocxConverter, TextToPdfConverter,
+        ExternalOfficeConverter, ExternalPandocConverter, ImageToDocxConverter,
+        ImageToPdfConverter, ImageToTextConverter, PdfToDocxConverter, PdfToTextConverter,
+        TextToDocxConverter, TextToPdfConverter,
     },
     core::{format::Format, traits::DocumentConverter, ConvertOptions, DocVertError},
 };
@@ -69,6 +70,9 @@ impl ConverterRegistry {
         if let Some(office) = ExternalOfficeConverter::detect() {
             registry.register(office);
         }
+        if let Some(pandoc) = ExternalPandocConverter::detect() {
+            registry.register(pandoc);
+        }
         registry
     }
 
@@ -124,6 +128,20 @@ impl ConverterRegistry {
         output: &Path,
         options: &ConvertOptions,
     ) -> Result<(), DocVertError> {
+        self.convert_with_progress(input, output, options, |_| {})
+    }
+
+    /// `convert` ile aynıdır; ayrıca 0.0-1.0 arası adım ilerlemesini bildirir.
+    /// Tek adımlı planlarda yalnızca başlangıç/bitiş, zincirli planlarda ara
+    /// format tamamlandığında 0.5 bildirilir. Böylece TUI gerçek aşamaları
+    /// gösterebilir.
+    pub fn convert_with_progress<F: Fn(f32)>(
+        &self,
+        input: &Path,
+        output: &Path,
+        options: &ConvertOptions,
+        on_progress: F,
+    ) -> Result<(), DocVertError> {
         let from = format_of(input)?;
         let to = format_of(output)?;
         let plan = self
@@ -134,19 +152,29 @@ impl ConverterRegistry {
             })?;
 
         if !plan.is_chained() {
-            return plan.steps[0].convert(input, output, options);
+            on_progress(0.1);
+            let result = plan.steps[0].convert(input, output, options);
+            if result.is_ok() {
+                on_progress(1.0);
+            }
+            return result;
         }
 
         let pivot = plan
             .pivot()
             .ok_or_else(|| DocVertError::InvalidInput("Eksik ara format".into()))?;
         let temporary = temporary_path(output, pivot);
+        on_progress(0.05);
         if let Err(error) = plan.steps[0].convert(input, &temporary, options) {
             let _ = std::fs::remove_file(&temporary);
             return Err(error);
         }
+        on_progress(0.5);
         let result = plan.steps[1].convert(&temporary, output, options);
         let _ = std::fs::remove_file(&temporary);
+        if result.is_ok() {
+            on_progress(1.0);
+        }
         result
     }
 
@@ -187,4 +215,84 @@ fn temporary_path(output: &Path, pivot: Format) -> PathBuf {
         stamp,
         pivot.extension()
     ))
+}
+
+#[cfg(test)]
+mod progress_tests {
+    use super::*;
+    use crate::core::{traits::DocumentConverter, ConvertOptions, DocVertError};
+    use std::cell::RefCell;
+
+    /// Belirli bir `from`→`to` çiftini "destekleyen" sahte motor.
+    struct FakeConverter {
+        from: Format,
+        to: Format,
+    }
+
+    impl DocumentConverter for FakeConverter {
+        fn name(&self) -> &'static str {
+            "fake"
+        }
+
+        fn can_handle(&self, from: Format, to: Format) -> bool {
+            from == self.from && to == self.to
+        }
+
+        fn convert(
+            &self,
+            _input: &Path,
+            _output: &Path,
+            _options: &ConvertOptions,
+        ) -> Result<(), DocVertError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn direct_plan_reports_start_and_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.txt");
+        std::fs::write(&input, "x").unwrap();
+        let output = dir.path().join("b.pdf");
+
+        let mut registry = ConverterRegistry::default();
+        registry.register(FakeConverter {
+            from: Format::Txt,
+            to: Format::Pdf,
+        });
+
+        let fractions = RefCell::new(Vec::new());
+        registry
+            .convert_with_progress(&input, &output, &ConvertOptions::default(), |value| {
+                fractions.borrow_mut().push(value)
+            })
+            .unwrap();
+        assert_eq!(*fractions.borrow(), vec![0.1, 1.0]);
+    }
+
+    #[test]
+    fn chained_plan_reports_midpoint() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("a.txt");
+        std::fs::write(&input, "x").unwrap();
+        let output = dir.path().join("b.html");
+
+        let mut registry = ConverterRegistry::default();
+        registry.register(FakeConverter {
+            from: Format::Txt,
+            to: Format::Pdf,
+        });
+        registry.register(FakeConverter {
+            from: Format::Pdf,
+            to: Format::Html,
+        });
+
+        let fractions = RefCell::new(Vec::new());
+        registry
+            .convert_with_progress(&input, &output, &ConvertOptions::default(), |value| {
+                fractions.borrow_mut().push(value)
+            })
+            .unwrap();
+        assert_eq!(*fractions.borrow(), vec![0.05, 0.5, 1.0]);
+    }
 }
