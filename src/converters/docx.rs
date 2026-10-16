@@ -180,6 +180,9 @@ fn escape_xml(text: &str) -> String {
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
             '\'' => out.push_str("&apos;"),
+            // XML 1.0'da geçersiz denetim karakterlerini düşür.
+            _ if (character < '\u{20}' && !matches!(character, '\t' | '\n' | '\r'))
+                || matches!(character, '\u{FFFE}' | '\u{FFFF}') => {}
             _ => out.push(character),
         }
     }
@@ -298,6 +301,13 @@ mod tests {
     fn crc32_matches_known_value() {
         // "123456789" için standart CRC-32 değeri.
         assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
+    }
+
+    #[test]
+    fn escape_xml_drops_invalid_control_characters() {
+        let escaped = escape_xml("a\u{c}b\u{1}c\t d\u{FFFE}\u{FFFF}");
+        assert_eq!(escaped, "abc\t d");
+        assert_eq!(escape_xml("<x&>'\""), "&lt;x&amp;&gt;&apos;&quot;");
     }
 
     #[test]
