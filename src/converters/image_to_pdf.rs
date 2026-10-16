@@ -2,12 +2,8 @@ use crate::core::{
     compress::apply_pdf_compression, format::Format, traits::DocumentConverter, ConvertOptions,
     DocVertError,
 };
-use printpdf::{Image, ImageTransform, Mm, PdfDocument};
-use std::{
-    fs::File,
-    io::{BufWriter, Write},
-    path::Path,
-};
+use printpdf::{Mm, Op, PdfDocument, PdfPage, PdfSaveOptions, RawImage, XObjectTransform};
+use std::path::Path;
 
 /// JPG, PNG, WebP, BMP ve TIFF dosyalarını saf Rust ile tek sayfalı PDF'e çevirir.
 ///
@@ -31,8 +27,8 @@ impl DocumentConverter for ImageToPdfConverter {
         output: &Path,
         options: &ConvertOptions,
     ) -> Result<(), DocVertError> {
-        let source = printpdf::image_crate::open(input)
-            .map_err(|error| DocVertError::InvalidInput(error.to_string()))?;
+        let source =
+            image::open(input).map_err(|error| DocVertError::InvalidInput(error.to_string()))?;
         let (original_width, original_height) = (source.width(), source.height());
         if original_width == 0 || original_height == 0 {
             return Err(DocVertError::InvalidInput(
@@ -50,48 +46,41 @@ impl DocumentConverter for ImageToPdfConverter {
             (original_width, original_height)
         };
         let resized = if (width_px, height_px) != (original_width, original_height) {
-            source.resize_exact(
-                width_px,
-                height_px,
-                printpdf::image_crate::imageops::FilterType::Lanczos3,
-            )
+            source.resize_exact(width_px, height_px, image::imageops::FilterType::Lanczos3)
         } else {
             source
         };
 
         // 96 DPI varsayımıyla pikseli mm'e dönüştürür; en-boy oranı korunur.
         let mm_per_px = 25.4_f32 / 96.0;
-        let (document, page, layer) = PdfDocument::new(
+        let mut document = PdfDocument::new(
             input
                 .file_stem()
                 .and_then(|v| v.to_str())
                 .unwrap_or("DocVert"),
-            Mm(original_width as f32 * mm_per_px),
-            Mm(original_height as f32 * mm_per_px),
-            "Görsel",
         );
-        let layer = document.get_page(page).get_layer(layer);
-        let image = Image::from_dynamic_image(&resized);
+        let raw = RawImage::from_dynamic_image(resized).map_err(DocVertError::InvalidInput)?;
+        let image_id = document.add_image(&raw);
         // Küçültülen görüntüyü özgün fiziksel boyuta geri ölçekle.
         let scale_x = original_width as f32 / width_px as f32;
         let scale_y = original_height as f32 / height_px as f32;
-        image.add_to_layer(
-            layer,
-            ImageTransform {
-                translate_x: Some(Mm(0.0)),
-                translate_y: Some(Mm(0.0)),
-                rotate: None,
-                scale_x: Some(scale_x),
-                scale_y: Some(scale_y),
-                dpi: Some(96.0),
-            },
+        let page = PdfPage::new(
+            Mm(original_width as f32 * mm_per_px),
+            Mm(original_height as f32 * mm_per_px),
+            vec![Op::UseXobject {
+                id: image_id,
+                transform: XObjectTransform {
+                    scale_x: Some(scale_x),
+                    scale_y: Some(scale_y),
+                    dpi: Some(96.0),
+                    ..Default::default()
+                },
+            }],
         );
-        let file = File::create(output).map_err(|_| DocVertError::Output(output.to_path_buf()))?;
-        let mut file = BufWriter::new(file);
-        document
-            .save(&mut file)
-            .map_err(|e| DocVertError::InvalidInput(e.to_string()))?;
-        file.flush()?;
+        let bytes = document
+            .with_pages(vec![page])
+            .save(&PdfSaveOptions::default(), &mut Vec::new());
+        std::fs::write(output, bytes).map_err(|_| DocVertError::Output(output.to_path_buf()))?;
         apply_pdf_compression(output, options.compress_level)?;
         Ok(())
     }

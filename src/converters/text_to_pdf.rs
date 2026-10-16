@@ -2,12 +2,11 @@ use crate::core::{
     compress::apply_pdf_compression, format::Format, traits::DocumentConverter, ConvertOptions,
     DocVertError,
 };
-use printpdf::{BuiltinFont, IndirectFontRef, Mm, PdfDocument, PdfDocumentReference};
-use std::{
-    fs::File,
-    io::{BufWriter, Write},
-    path::Path,
+use printpdf::{
+    BuiltinFont, Mm, Op, ParsedFont, PdfDocument, PdfFontHandle, PdfPage, PdfSaveOptions, Point,
+    Pt, TextItem,
 };
+use std::{fs::File, path::Path};
 
 const PAGE_WIDTH_MM: f32 = 210.0;
 const PAGE_HEIGHT_MM: f32 = 297.0;
@@ -52,29 +51,52 @@ impl DocumentConverter for TextToPdfConverter {
             .file_stem()
             .and_then(|value| value.to_str())
             .unwrap_or("DocVert");
-        let (document, first_page, first_layer) =
-            PdfDocument::new(title, Mm(PAGE_WIDTH_MM), Mm(PAGE_HEIGHT_MM), "Sayfa");
-        let font = load_text_font(&document)?;
+        let mut document = PdfDocument::new(title);
+        let font = load_text_font(&mut document);
 
-        let mut layer = document.get_page(first_page).get_layer(first_layer);
+        let mut pages = Vec::new();
+        let mut ops = vec![
+            Op::StartTextSection,
+            Op::SetFont {
+                font: font.clone(),
+                size: Pt(FONT_SIZE),
+            },
+        ];
         let mut y = PAGE_HEIGHT_MM - MARGIN_MM;
         for line in &lines {
             if y < MARGIN_MM {
-                let (page, layer_index) =
-                    document.add_page(Mm(PAGE_WIDTH_MM), Mm(PAGE_HEIGHT_MM), "Sayfa");
-                layer = document.get_page(page).get_layer(layer_index);
+                ops.push(Op::EndTextSection);
+                pages.push(PdfPage::new(
+                    Mm(PAGE_WIDTH_MM),
+                    Mm(PAGE_HEIGHT_MM),
+                    std::mem::take(&mut ops),
+                ));
+                ops = vec![
+                    Op::StartTextSection,
+                    Op::SetFont {
+                        font: font.clone(),
+                        size: Pt(FONT_SIZE),
+                    },
+                ];
                 y = PAGE_HEIGHT_MM - MARGIN_MM;
             }
-            layer.use_text(line.as_str(), FONT_SIZE, Mm(MARGIN_MM), Mm(y), &font);
+            ops.push(Op::SetTextCursor {
+                pos: Point::new(Mm(MARGIN_MM), Mm(y)),
+            });
+            ops.push(Op::ShowText {
+                items: vec![TextItem::Text(line.clone())],
+            });
             y -= LINE_HEIGHT_MM;
         }
+        ops.push(Op::EndTextSection);
+        pages.push(PdfPage::new(Mm(PAGE_WIDTH_MM), Mm(PAGE_HEIGHT_MM), ops));
 
-        let file = File::create(output).map_err(|_| DocVertError::Output(output.to_path_buf()))?;
-        let mut writer = BufWriter::new(file);
-        document
-            .save(&mut writer)
-            .map_err(|error| DocVertError::InvalidInput(error.to_string()))?;
-        writer.flush()?;
+        let bytes = document
+            .with_pages(pages)
+            .save(&PdfSaveOptions::default(), &mut Vec::new());
+        let mut file =
+            File::create(output).map_err(|_| DocVertError::Output(output.to_path_buf()))?;
+        std::io::Write::write_all(&mut file, &bytes)?;
         apply_pdf_compression(output, options.compress_level)?;
         Ok(())
     }
@@ -82,7 +104,7 @@ impl DocumentConverter for TextToPdfConverter {
 
 /// Metin PDF'i için Unicode destekli bir sistem fontu yükler. Bulunamazsa
 /// Türkçe karakterleri kaybedebilen yerleşik Helvetica'ya düşer.
-fn load_text_font(document: &PdfDocumentReference) -> Result<IndirectFontRef, DocVertError> {
+fn load_text_font(document: &mut PdfDocument) -> PdfFontHandle {
     const CANDIDATES: &[&str] = &[
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -96,15 +118,13 @@ fn load_text_font(document: &PdfDocumentReference) -> Result<IndirectFontRef, Do
         "C:\\Windows\\Fonts\\segoeui.ttf",
     ];
     for path in CANDIDATES {
-        if let Ok(file) = File::open(path) {
-            if let Ok(font) = document.add_external_font(file) {
-                return Ok(font);
+        if let Ok(bytes) = std::fs::read(path) {
+            if let Some(font) = ParsedFont::from_bytes(&bytes, 0, &mut Vec::new()) {
+                return PdfFontHandle::External(document.add_font(&font));
             }
         }
     }
-    document
-        .add_builtin_font(BuiltinFont::Helvetica)
-        .map_err(|error| DocVertError::InvalidInput(error.to_string()))
+    PdfFontHandle::Builtin(BuiltinFont::Helvetica)
 }
 
 /// Bir metin/Markdown/HTML/CSV dosyasını düz metne indirger.

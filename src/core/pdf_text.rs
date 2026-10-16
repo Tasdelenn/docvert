@@ -34,7 +34,7 @@ pub fn extract_text(path: &Path) -> Result<String, DocVertError> {
     let mut cmap_cache: HashMap<ObjectId, Rc<HashMap<u32, String>>> = HashMap::new();
     for (_, page_id) in document.get_pages() {
         let fonts = build_fonts(&document, page_id, &mut cmap_cache);
-        let content = document.get_page_content(page_id).unwrap_or_default();
+        let content = document.get_page_content(page_id);
         output.push_str(&extract_page(&content, &fonts));
         output.push('\n');
     }
@@ -47,10 +47,12 @@ fn build_fonts(
     cmap_cache: &mut HashMap<ObjectId, Rc<HashMap<u32, String>>>,
 ) -> HashMap<Vec<u8>, FontInfo> {
     let mut fonts = HashMap::new();
-    for (name, dictionary) in document.get_page_fonts(page_id) {
+    for (name, dictionary) in document.get_page_fonts(page_id).unwrap_or_default() {
         let subtype = dictionary
             .get(b"Subtype")
-            .and_then(Object::as_name_str)
+            .and_then(Object::as_name)
+            .ok()
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
             .unwrap_or("");
         let two_byte = subtype == "Type0";
         let mut cmap = Rc::new(HashMap::new());
@@ -320,7 +322,8 @@ fn embedded_cmap_data(document: &Document, name: &str) -> Option<Vec<u8>> {
             .dict
             .get(b"CMapName")
             .ok()
-            .and_then(|value| value.as_name_str().ok())
+            .and_then(|value| value.as_name().ok())
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
             == Some(name);
         if matches_name {
             return Some(

@@ -20,8 +20,8 @@ impl DocumentConverter for ImageToDocxConverter {
         output: &Path,
         options: &ConvertOptions,
     ) -> Result<(), DocVertError> {
-        let source = printpdf::image_crate::open(input)
-            .map_err(|error| DocVertError::InvalidInput(error.to_string()))?;
+        let source =
+            image::open(input).map_err(|error| DocVertError::InvalidInput(error.to_string()))?;
         let (width_px, height_px) = (source.width(), source.height());
         if width_px == 0 || height_px == 0 {
             return Err(DocVertError::InvalidInput(
@@ -35,14 +35,10 @@ impl DocumentConverter for ImageToDocxConverter {
             // Kalite düşükse görüntüyü küçültüp PNG olarak göm.
             let width = ((width_px as f32 * scale).round() as u32).max(1);
             let height = ((height_px as f32 * scale).round() as u32).max(1);
-            let resized = source.resize_exact(
-                width,
-                height,
-                printpdf::image_crate::imageops::FilterType::Lanczos3,
-            );
+            let resized = source.resize_exact(width, height, image::imageops::FilterType::Lanczos3);
             let mut buffer = Cursor::new(Vec::new());
             resized
-                .write_to(&mut buffer, printpdf::image_crate::ImageFormat::Png)
+                .write_to(&mut buffer, image::ImageFormat::Png)
                 .map_err(|error| DocVertError::InvalidInput(error.to_string()))?;
             (buffer.into_inner(), "png", "image/png")
         } else {
@@ -52,7 +48,7 @@ impl DocumentConverter for ImageToDocxConverter {
                 _ => {
                     let mut buffer = Cursor::new(Vec::new());
                     source
-                        .write_to(&mut buffer, printpdf::image_crate::ImageFormat::Png)
+                        .write_to(&mut buffer, image::ImageFormat::Png)
                         .map_err(|error| DocVertError::InvalidInput(error.to_string()))?;
                     (buffer.into_inner(), "png", "image/png")
                 }

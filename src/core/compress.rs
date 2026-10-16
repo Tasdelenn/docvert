@@ -16,23 +16,13 @@ pub fn apply_pdf_compression(path: &Path, level: u8) -> Result<(), DocVertError>
             continue;
         };
         // Görüntüleri (DCTDecode/FlateDecode görüntü) yeniden sıkıştırma.
-        if stream
-            .dict
-            .get(b"Subtype")
-            .and_then(Object::as_name_str)
-            .ok()
-            == Some("Image")
-        {
+        if stream.dict.get(b"Subtype").and_then(Object::as_name).ok() == Some(b"Image".as_slice()) {
             continue;
         }
-        let filter = stream
-            .dict
-            .get(b"Filter")
-            .and_then(Object::as_name_str)
-            .ok();
+        let filter = stream.dict.get(b"Filter").and_then(Object::as_name).ok();
         let plain = match filter {
             None => stream.content.clone(),
-            Some("FlateDecode") => match stream.decompressed_content() {
+            Some(b"FlateDecode") => match stream.decompressed_content() {
                 Ok(content) => content,
                 Err(_) => continue,
             },
