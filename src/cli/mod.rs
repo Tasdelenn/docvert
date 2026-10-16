@@ -118,7 +118,13 @@ pub fn run(args: CliArgs) -> Result<(), DocVertError> {
         }
     };
     for (input, output) in inputs.iter().zip(&outputs) {
-        let same_file = std::fs::canonicalize(input).ok() == std::fs::canonicalize(output).ok();
+        let same_file = matches!(
+            (
+                std::fs::canonicalize(input),
+                std::fs::canonicalize(output)
+            ),
+            (Ok(input), Ok(output)) if input == output
+        );
         if input == output || same_file {
             return Err(DocVertError::InvalidInput(format!(
                 "Çıktı girdi ile aynı dosya olamaz: {}",

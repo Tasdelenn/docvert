@@ -65,9 +65,10 @@ pub fn judge(
     .to_string();
 
     // Anahtar komut satırında görünmesin diye başlık geçici bir dosyaya
-    // yazılır ve curl'a `-H @dosya` ile verilir.
-    let header_path = write_auth_header(&key)?;
-    let header_arg = format!("@{header}", header = header_path.display());
+    // yazılır ve curl'a `-H @dosya` ile verilir. Koruyucu, dosya işi
+    // bitince (ya da hata çıkışında) dosyayı siler.
+    let header_file = write_auth_header(&key)?;
+    let header_arg = format!("@{header}", header = header_file.0.display());
     let mut child = Command::new("curl")
         .arg("-sS")
         .arg("--max-time")
@@ -94,9 +95,7 @@ pub fn judge(
     }
     let output = child
         .wait_with_output()
-        .map_err(|error| format!("curl beklenemedi: {error}"));
-    let _ = std::fs::remove_file(&header_path);
-    let output = output?;
+        .map_err(|error| format!("curl beklenemedi: {error}"))?;
     if !output.status.success() {
         return Err(format!(
             "curl hatası: {}",
@@ -106,9 +105,18 @@ pub fn judge(
     parse_assessment(&String::from_utf8_lossy(&output.stdout))
 }
 
+/// Geçici başlık dosyası için RAII koruyucusu: kapsamdan çıkınca dosya silinir.
+struct TempHeader(std::path::PathBuf);
+
+impl Drop for TempHeader {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 /// `Authorization: Bearer ...` başlık satırını yalnızca sahibinin
-/// okuyabileceği bir geçici dosyaya yazar; yolu döndürür.
-fn write_auth_header(key: &str) -> Result<std::path::PathBuf, String> {
+/// okuyabileceği bir geçici dosyaya yazar; koruyucuyu döndürür.
+fn write_auth_header(key: &str) -> Result<TempHeader, String> {
     static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -129,9 +137,11 @@ fn write_auth_header(key: &str) -> Result<std::path::PathBuf, String> {
     let mut file = options
         .open(&path)
         .map_err(|error| format!("geçici başlık dosyası açılamadı: {error}"))?;
+    // Dosya artık var; yazma hatasında bile diskte kalmasın.
+    let guard = TempHeader(path);
     file.write_all(format!("Authorization: Bearer {key}\n").as_bytes())
         .map_err(|error| format!("geçici başlık dosyası yazılamadı: {error}"))?;
-    Ok(path)
+    Ok(guard)
 }
 
 /// OpenRouter Jev yanıtını tipli değerlendirmeye çevirir (ağdan bağımsız, test edilebilir).
@@ -166,6 +176,21 @@ pub fn parse_assessment(response: &str) -> Result<Assessment, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn temp_header_file_is_private_and_removed_on_drop() {
+        let guard = write_auth_header("sk-or-test").unwrap();
+        let path = guard.0.clone();
+        assert!(path.exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+        drop(guard);
+        assert!(!path.exists());
+    }
 
     #[test]
     fn parses_a_likely_noul_answer() {
