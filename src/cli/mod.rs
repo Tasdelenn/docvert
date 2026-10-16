@@ -100,9 +100,12 @@ pub fn run(args: CliArgs) -> Result<(), DocVertError> {
             "Dönüştürülecek dosya bulunamadı".into(),
         ));
     }
+    // -o, yalnızca kullanıcı tek bir dosya girdisi verdiyse dosya yolu sayılır;
+    // klasör girdisinde her zaman çıktı klasörü olarak oluşturulur.
+    let single_file_input = matches!(args.input.as_slice(), [only] if only.is_file());
     let outputs: Vec<PathBuf> = match &args.output {
-        // Tek girdi + dosya çıktısı: doğrudan verilen isim kullanılır.
-        Some(output) if inputs.len() == 1 && !output.is_dir() => vec![output.clone()],
+        // Tek dosya girdisi + dosya çıktısı: doğrudan verilen isim kullanılır.
+        Some(output) if single_file_input && !output.is_dir() => vec![output.clone()],
         // Çok girdi ya da klasör çıktısı: her girdi için çıktı adı planlanır.
         Some(output) => {
             fs::create_dir_all(output)?;

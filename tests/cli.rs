@@ -170,9 +170,7 @@ fn recursive_flag_controls_subdirectory_inputs() {
     std::fs::create_dir(&sub).unwrap();
     write(&sub.join("c.txt"), "alt\n");
 
-    // Tek girdi kolunda -o yalnızca var olan klasörse klasör sayılır.
     let out_flat = dir.path().join("flat");
-    std::fs::create_dir(&out_flat).unwrap();
     run(args(&[
         "docvert",
         "-i",
@@ -396,4 +394,25 @@ fn binary_explain_exits_zero_with_output() {
     let output = docvert_bin(dir.path(), &["--explain"]);
     assert!(output.status.success());
     assert!(!output.stdout.is_empty(), "--explain çıktısı boş");
+}
+
+/// Tek dosyalı klasör girdisinde -o, var olmasa bile çıktı klasörü sayılır.
+#[test]
+fn directory_input_with_single_file_creates_output_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let input_dir = dir.path().join("d");
+    std::fs::create_dir(&input_dir).unwrap();
+    write(&input_dir.join("a.txt"), "tek dosya\n");
+    let out = dir.path().join("yeni");
+    run(args(&[
+        "docvert",
+        "-i",
+        &s(&input_dir),
+        "-t",
+        "pdf",
+        "-o",
+        &s(&out),
+    ]))
+    .unwrap();
+    assert!(out.join("a.pdf").exists(), "yeni/a.pdf üretilmeliydi");
 }
