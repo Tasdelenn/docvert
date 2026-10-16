@@ -11,4 +11,5 @@ cargo fmt --check ve clippy temiz geçiyor.
 tests/cli.rs adlı yeni bir entegrasyon test dosyası eklendi.
 tests/cli.rs, CliArgs::try_parse_from ile clap çözümlemesini kullanan kütüphane düzeyi testler içerir.
 tests/cli.rs, docvert ikilisini CARGO_BIN_EXE_docvert ile çalıştırıp başarısız çağrıda çıkış kodu 2'yi doğrulayan bir test içerir.
-Bu PR'da src/ altında üretim kodu değişmedi.
+src/cli/mod.rs'te -o, yalnızca tek bir dosya girdisi verildiğinde dosya yolu sayılır; klasör girdisinde çıktı klasörü olarak oluşturulur.
+tests/cli.rs'e directory_input_with_single_file_creates_output_dir testi eklendi.
