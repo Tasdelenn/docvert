@@ -359,6 +359,98 @@ fn docx_becomes_markdown_with_pandoc() {
     assert!(text.contains("Başlık"), "markdown çıktısı: {text:?}");
 }
 
+/// `-o` verilmeden tek girdi dönüşümü, çıktıyı girdinin yanına yazmalı.
+#[test]
+fn single_input_without_output_lands_next_to_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("belge.txt");
+    std::fs::write(&input, "Varsayılan çıktı denemesi\n").unwrap();
+
+    docvert::cli::run(docvert::cli::CliArgs {
+        input: vec![input],
+        output: None,
+        to: Some("pdf".into()),
+        merge: false,
+        split: false,
+        recursive: false,
+        quality: 80,
+        compress: 6,
+        verify: false,
+        explain: false,
+    })
+    .expect("-o olmadan tek girdi dönüşümü başarısız");
+
+    assert!(
+        dir.path().join("belge.pdf").exists(),
+        "belge.pdf girdinin yanında oluşmalıydı"
+    );
+}
+
+/// Çıktı girdiyle aynı dosyaya denk geliyorsa hata verilmeli (üzerine
+/// yazmama koruması).
+#[test]
+fn output_equal_to_input_is_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("belge.txt");
+    std::fs::write(&input, "Üzerine yazma denemesi\n").unwrap();
+
+    let result = docvert::cli::run(docvert::cli::CliArgs {
+        input: vec![input.clone()],
+        output: None,
+        to: Some("txt".into()),
+        merge: false,
+        split: false,
+        recursive: false,
+        quality: 80,
+        compress: 6,
+        verify: false,
+        explain: false,
+    });
+    assert!(result.is_err(), "girdiyle aynı çıktı hata olmalı");
+}
+
+/// LibreOffice sürücüsü varsa: `-o out/ozel.pdf` hedefi, out/ içindeki aynı
+/// kök adlı (kaynak.docx -> kaynak.pdf) var olan başka bir dosyaya zarar
+/// vermemeli ve sonuç ozel.pdf olarak üretilmeli.
+#[test]
+fn libreoffice_does_not_clobber_same_stem_output() {
+    if docvert::converters::ExternalOfficeConverter::detect().is_none() {
+        eprintln!("libreoffice bulunamadı; test atlandı");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("kaynak.txt");
+    std::fs::write(&source, "LibreOffice çıktı denemesi\n").unwrap();
+    let docx = dir.path().join("kaynak.docx");
+    let out_dir = dir.path().join("out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    let registry = docvert::core::registry::ConverterRegistry::with_detected_drivers();
+    registry
+        .convert(&source, &docx, &ConvertOptions::default())
+        .expect("metin → docx başarısız");
+
+    // Bekçi dosya: eski davranış bunun üzerine yazıyordu.
+    let sentinel = out_dir.join("kaynak.pdf");
+    std::fs::write(&sentinel, b"bekci-dosya").unwrap();
+    let custom = out_dir.join("ozel.pdf");
+
+    let office = docvert::converters::ExternalOfficeConverter::detect().unwrap();
+    docvert::core::traits::DocumentConverter::convert(
+        &office,
+        &docx,
+        &custom,
+        &ConvertOptions::default(),
+    )
+    .expect("libreoffice docx → pdf başarısız");
+
+    assert!(custom.exists(), "ozel.pdf üretilmedi");
+    assert_eq!(
+        std::fs::read(&sentinel).unwrap(),
+        b"bekci-dosya",
+        "bekçi dosya ezildi"
+    );
+}
+
 /// ToUnicode olmadan, Encoding/Differences ile eşlenen tek baytlık font.
 #[test]
 fn differences_encoding_is_honored() {

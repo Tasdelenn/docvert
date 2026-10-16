@@ -15,8 +15,13 @@ use ratatui::{
     widgets::{Block, Borders, Gauge, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
 };
-use std::{collections::HashSet, fs, io, path::PathBuf, sync::Arc, time::Duration};
-use tokio::sync::mpsc;
+use std::{
+    collections::HashSet,
+    fs, io,
+    path::PathBuf,
+    sync::{mpsc, Arc},
+    time::Duration,
+};
 
 #[derive(Clone, Debug)]
 enum JobState {
@@ -76,13 +81,13 @@ struct App {
     focus: Focus,
     queue: Vec<QueueJob>,
     registry: Arc<ConverterRegistry>,
-    sender: mpsc::UnboundedSender<JobUpdate>,
-    receiver: mpsc::UnboundedReceiver<JobUpdate>,
+    sender: mpsc::Sender<JobUpdate>,
+    receiver: mpsc::Receiver<JobUpdate>,
 }
 
 impl App {
     fn new() -> io::Result<Self> {
-        let (sender, receiver) = mpsc::unbounded_channel();
+        let (sender, receiver) = mpsc::channel();
         let mut app = Self {
             directory: std::env::current_dir()?,
             entries: Vec::new(),
