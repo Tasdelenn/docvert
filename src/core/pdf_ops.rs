@@ -134,13 +134,7 @@ pub fn text_operator_count(path: &Path) -> Result<usize, DocVertError> {
         let Object::Stream(stream) = object else {
             continue;
         };
-        if stream
-            .dict
-            .get(b"Subtype")
-            .and_then(Object::as_name_str)
-            .ok()
-            == Some("Image")
-        {
+        if stream.dict.get(b"Subtype").and_then(Object::as_name).ok() == Some(b"Image".as_slice()) {
             continue;
         }
         let content = stream
