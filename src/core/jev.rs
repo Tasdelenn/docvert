@@ -64,7 +64,10 @@ pub fn judge(
     })
     .to_string();
 
-    let auth = format!("Authorization: Bearer {key}");
+    // Anahtar komut satırında görünmesin diye başlık geçici bir dosyaya
+    // yazılır ve curl'a `-H @dosya` ile verilir.
+    let header_path = write_auth_header(&key)?;
+    let header_arg = format!("@{header}", header = header_path.display());
     let mut child = Command::new("curl")
         .arg("-sS")
         .arg("--max-time")
@@ -73,7 +76,7 @@ pub fn judge(
         .arg("POST")
         .arg(ENDPOINT)
         .arg("-H")
-        .arg(&auth)
+        .arg(&header_arg)
         .arg("-H")
         .arg("Content-Type: application/json")
         .arg("--data-binary")
@@ -91,7 +94,9 @@ pub fn judge(
     }
     let output = child
         .wait_with_output()
-        .map_err(|error| format!("curl beklenemedi: {error}"))?;
+        .map_err(|error| format!("curl beklenemedi: {error}"));
+    let _ = std::fs::remove_file(&header_path);
+    let output = output?;
     if !output.status.success() {
         return Err(format!(
             "curl hatası: {}",
@@ -99,6 +104,34 @@ pub fn judge(
         ));
     }
     parse_assessment(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// `Authorization: Bearer ...` başlık satırını yalnızca sahibinin
+/// okuyabileceği bir geçici dosyaya yazar; yolu döndürür.
+fn write_auth_header(key: &str) -> Result<std::path::PathBuf, String> {
+    static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!(
+        "docvert-jev-{}-{nanos}-{counter}.txt",
+        std::process::id()
+    ));
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options
+        .open(&path)
+        .map_err(|error| format!("geçici başlık dosyası açılamadı: {error}"))?;
+    file.write_all(format!("Authorization: Bearer {key}\n").as_bytes())
+        .map_err(|error| format!("geçici başlık dosyası yazılamadı: {error}"))?;
+    Ok(path)
 }
 
 /// OpenRouter Jev yanıtını tipli değerlendirmeye çevirir (ağdan bağımsız, test edilebilir).
