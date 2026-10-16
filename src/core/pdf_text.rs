@@ -11,14 +11,16 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     path::Path,
+    rc::Rc,
 };
 
 /// Tek bir font için çözümleme bilgisi.
 struct FontInfo {
     /// Girdi kodları iki baytlı mı (Type0/Identity-H)?
     two_byte: bool,
-    /// Kod noktası -> Unicode metin (ToUnicode'dan).
-    cmap: HashMap<u32, String>,
+    /// Kod noktası -> Unicode metin (ToUnicode'dan). Aynı ToUnicode akışını
+    /// paylaşan fontlar kopyayı değil `Rc`'yi paylaşır.
+    cmap: Rc<HashMap<u32, String>>,
     /// Kod noktası -> karakter (Encoding Differences'tan, ToUnicode yoksa).
     differences: HashMap<u32, char>,
 }
@@ -27,8 +29,11 @@ struct FontInfo {
 pub fn extract_text(path: &Path) -> Result<String, DocVertError> {
     let document = Document::load(path)?;
     let mut output = String::new();
+    // Aynı ToUnicode akışını kullanan fontlar her sayfada yeniden
+    // ayrıştırılmasın diye akış kimliğine göre önbellek.
+    let mut cmap_cache: HashMap<ObjectId, Rc<HashMap<u32, String>>> = HashMap::new();
     for (_, page_id) in document.get_pages() {
-        let fonts = build_fonts(&document, page_id);
+        let fonts = build_fonts(&document, page_id, &mut cmap_cache);
         let content = document.get_page_content(page_id).unwrap_or_default();
         output.push_str(&extract_page(&content, &fonts));
         output.push('\n');
@@ -36,7 +41,11 @@ pub fn extract_text(path: &Path) -> Result<String, DocVertError> {
     Ok(normalize(&output))
 }
 
-fn build_fonts(document: &Document, page_id: ObjectId) -> HashMap<Vec<u8>, FontInfo> {
+fn build_fonts(
+    document: &Document,
+    page_id: ObjectId,
+    cmap_cache: &mut HashMap<ObjectId, Rc<HashMap<u32, String>>>,
+) -> HashMap<Vec<u8>, FontInfo> {
     let mut fonts = HashMap::new();
     for (name, dictionary) in document.get_page_fonts(page_id) {
         let subtype = dictionary
@@ -44,13 +53,19 @@ fn build_fonts(document: &Document, page_id: ObjectId) -> HashMap<Vec<u8>, FontI
             .and_then(Object::as_name_str)
             .unwrap_or("");
         let two_byte = subtype == "Type0";
-        let mut cmap = HashMap::new();
+        let mut cmap = Rc::new(HashMap::new());
         if let Ok(stream_id) = dictionary.get(b"ToUnicode").and_then(Object::as_reference) {
-            if let Ok(stream) = document.get_object(stream_id).and_then(Object::as_stream) {
+            if let Some(cached) = cmap_cache.get(&stream_id) {
+                cmap = Rc::clone(cached);
+            } else if let Ok(stream) =
+                document.get_object(stream_id).and_then(Object::as_stream)
+            {
                 let data = stream
                     .decompressed_content()
                     .unwrap_or_else(|_| stream.content.clone());
-                cmap = resolve_cmap(document, &data, 0, &mut HashSet::new());
+                let resolved = Rc::new(resolve_cmap(document, &data, 0, &mut HashSet::new()));
+                cmap_cache.insert(stream_id, Rc::clone(&resolved));
+                cmap = resolved;
             }
         }
         let differences = differences_map(dictionary);
@@ -180,6 +195,10 @@ fn glyph_to_char(name: &str) -> Option<char> {
     })
 }
 
+/// `bfrange` için kabul edilen en geniş aralık. Tipik CMap'ler birkaç bin
+/// giriş içerir; daha büyük aralıklar DoS/OOM riski taşıdığı için atlanır.
+const MAX_BFRANGE_SPAN: u32 = 0xFFFF;
+
 /// Ayrıştırılmış bir CMap: `kod -> metin` eşlemesi ve `usecmap` ile devralınan
 /// temel CMap adları.
 #[derive(Default)]
@@ -238,6 +257,11 @@ fn parse_cmap(data: &[u8]) -> CmapData {
                 }
                 let low = bytes_to_u32(&groups[0]);
                 let high = bytes_to_u32(&groups[1]);
+                // Bozuk/kötü niyetli aralıkları atla: devasa bir aralık
+                // milyarlarca ekleme yapıp belleği tüketebilirdi.
+                if high < low || high - low > MAX_BFRANGE_SPAN {
+                    continue;
+                }
                 if let Some(open) = bracket {
                     let inner = &line[open + 1..];
                     let destinations = hex_groups(inner);
@@ -1065,7 +1089,7 @@ mod tests {
         cmap.insert(0x015Fu32, "ş".to_string());
         let info = FontInfo {
             two_byte: true,
-            cmap,
+            cmap: Rc::new(cmap),
             differences: HashMap::new(),
         };
         assert_eq!(decode(&[0x01, 0x5F, 0x00, 0x41], Some(&info)), "şA");
@@ -1091,10 +1115,25 @@ mod tests {
     fn unmapped_two_byte_codes_are_skipped() {
         let info = FontInfo {
             two_byte: true,
-            cmap: HashMap::from([(0x0041u32, "A".to_string())]),
+            cmap: Rc::new(HashMap::from([(0x0041u32, "A".to_string())])),
             differences: HashMap::new(),
         };
         // 0x0041 -> "A"; 0x0100 eşlenmemiş -> atlanır (yer tutucu yok).
         assert_eq!(decode(&[0x00, 0x41, 0x01, 0x00], Some(&info)), "A");
+    }
+
+    #[test]
+    fn bfrange_over_max_span_is_skipped_but_valid_range_maps() {
+        // Dev bir aralık bellek tüketimine yol açardı; atlanmalı ama
+        // hemen sonraki geçerli aralık yine eşlenmeli.
+        let cmap = b"2 beginbfrange\n\
+                     <0000> <FFFFFFFF> <0041>\n\
+                     <0050> <0052> <0061>\n\
+                     endbfrange";
+        let map = parse_cmap(cmap).map;
+        assert!(map.get(&0x0000).is_none());
+        assert_eq!(map.len(), 3);
+        assert_eq!(map.get(&0x0050), Some(&"a".to_string()));
+        assert_eq!(map.get(&0x0052), Some(&"c".to_string()));
     }
 }
