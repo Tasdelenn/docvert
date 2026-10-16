@@ -223,22 +223,25 @@ fn strip_inline_markdown(text: &str) -> String {
 
 /// HTML etiketlerini kaldırıp okunabilir metne çevirir.
 fn html_to_text(content: &str) -> String {
-    let mut without_scripts = String::new();
-    let mut rest = content;
-    while let Some(start) = rest.find('<') {
-        without_scripts.push_str(&rest[..start]);
-        let lowered = rest[start..].to_ascii_lowercase();
-        let closing = if lowered.starts_with("<script") {
+    // Küçük harf kopyasını bir kez üretiriz; ASCII küçültme bayt uzunluğunu
+    // koruduğu için aynı indeksler iki dizgide de geçerlidir.
+    let lowered = content.to_ascii_lowercase();
+    let mut without_scripts = String::with_capacity(content.len());
+    let mut position = 0;
+    while let Some(offset) = lowered[position..].find('<') {
+        let start = position + offset;
+        without_scripts.push_str(&content[position..start]);
+        let closing = if lowered[start..].starts_with("<script") {
             "</script>"
-        } else if lowered.starts_with("<style") {
+        } else if lowered[start..].starts_with("<style") {
             "</style>"
         } else {
             ""
         };
         if closing.is_empty() {
             // Etiketin sonunu bul ve atla; satır sonu etiketlerini koru.
-            if let Some(end) = rest[start..].find('>') {
-                let tag = &lowered[..=end];
+            if let Some(end) = content[start..].find('>') {
+                let tag = &lowered[start..=start + end];
                 if tag.starts_with("<br")
                     || tag.starts_with("</p")
                     || tag.starts_with("</div")
@@ -248,17 +251,17 @@ fn html_to_text(content: &str) -> String {
                 {
                     without_scripts.push('\n');
                 }
-                rest = &rest[start + end + 1..];
+                position = start + end + 1;
             } else {
-                rest = "";
+                position = content.len();
             }
-        } else if let Some(end) = rest.to_ascii_lowercase()[start..].find(closing) {
-            rest = &rest[start + end + closing.len()..];
+        } else if let Some(end) = lowered[start..].find(closing) {
+            position = start + end + closing.len();
         } else {
-            rest = "";
+            position = content.len();
         }
     }
-    without_scripts.push_str(rest);
+    without_scripts.push_str(&content[position..]);
 
     let mut text = String::new();
     let mut in_tag = false;
@@ -394,5 +397,42 @@ mod tests {
         assert!(text.contains("Merhaba"));
         assert!(text.contains("Dünya & dostlar"));
         assert!(!text.contains('<'));
+    }
+
+    #[test]
+    fn uppercase_script_and_style_blocks_are_removed() {
+        let text = html_to_text(
+            "<P>önce</P><SCRIPT>var x = 1;</SCRIPT><STYLE>body{color:red}</STYLE><P>sonra</P>",
+        );
+        assert!(text.contains("önce"));
+        assert!(text.contains("sonra"));
+        assert!(!text.contains("var x"));
+        assert!(!text.contains("color:red"));
+    }
+
+    #[test]
+    fn br_and_block_end_tags_become_newlines() {
+        let text = html_to_text("bir<BR>iki</P><DIV>üç</DIV>");
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines.iter().any(|line| line.contains("bir")));
+        assert!(lines.iter().any(|line| line.contains("iki")));
+        assert!(lines.iter().any(|line| line.contains("üç")));
+    }
+
+    #[test]
+    fn unterminated_script_drops_the_rest() {
+        let text = html_to_text("<p>baş</p><script>yarım kalan");
+        assert!(text.contains("baş"));
+        assert!(!text.contains("yarım kalan"));
+    }
+
+    #[test]
+    fn handles_many_tags_quickly() {
+        let mut html = String::with_capacity(16 * 200_000);
+        for _ in 0..200_000 {
+            html.push_str("<p>x</p>");
+        }
+        let text = html_to_text(&html);
+        assert_eq!(text.lines().filter(|line| !line.is_empty()).count(), 200_000);
     }
 }
