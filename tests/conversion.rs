@@ -499,3 +499,49 @@ fn differences_encoding_is_honored() {
         "Differences eşlemesi: {extracted:?}"
     );
 }
+
+/// RUSTSEC-2026-0187: lopdf <0.42, derin iç içe nesnelerde yinelemeli ayrıştırma
+/// ile yığın taşmasına yol açıyordu. ~100k iç içe dizi içeren bir PDF,
+/// çökme olmadan (Ok ya da Err) işlenmeli.
+#[test]
+fn deeply_nested_pdf_objects_do_not_crash() {
+    let dir = tempfile::tempdir().unwrap();
+    let pdf = dir.path().join("derin.pdf");
+
+    const DEPTH: usize = 100_000;
+    let mut out: Vec<u8> = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    let mut nested = Vec::with_capacity(DEPTH * 2 + 8);
+    nested.extend(vec![b'['; DEPTH]);
+    nested.push(b'5');
+    nested.extend(vec![b']'; DEPTH]);
+    let objects: Vec<Vec<u8>> = vec![
+        b"<</Type/Catalog/Pages 3 0 R>>".to_vec(),
+        nested,
+        b"<</Type/Pages/Kids[]/Count 0>>".to_vec(),
+    ];
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n", index + 1).as_bytes());
+        out.extend_from_slice(object);
+        out.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
+    out.extend_from_slice(b"0000000000 65535 f \n");
+    for offset in &offsets {
+        out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer\n<</Size {}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .as_bytes(),
+    );
+    std::fs::write(&pdf, out).unwrap();
+
+    let output = dir.path().join("derin.txt");
+    let registry = docvert::core::registry::ConverterRegistry::with_detected_drivers();
+    let _ = registry.convert(&pdf, &output, &ConvertOptions::default());
+}
