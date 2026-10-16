@@ -108,7 +108,9 @@ pub fn split_pdf(input: PathBuf, output_dir: PathBuf) -> Result<(), DocVertError
         )));
     }
     for number in &page_numbers {
-        let mut single = Document::load(&input)?;
+        // Belgeyi her sayfa için yeniden ayrıştırmak yerine bir kez yükleyip
+        // kopyalıyoruz; ayrıştırma maliyeti sayfa sayısıyla çarpılmaz.
+        let mut single = document.clone();
         let remove: Vec<u32> = page_numbers
             .iter()
             .copied()
