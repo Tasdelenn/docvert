@@ -8,7 +8,7 @@
 
 cargo test tüm testleri geçiyor (birim + entegrasyon).
 cargo fmt --check ve clippy temiz geçiyor.
-lopdf 0.44'e yükseltildi; RUSTSEC-2026-0187 (derin iç içe nesnelerde yığın taşması) kapatıldı — regresyon testi 100k iç içe diziyle çökmeyi doğrular.
+Cargo.toml'de lopdf 0.32'den 0.44'e yükseltildi; deeply_nested_pdf_objects_do_not_crash testi 100_000 iç içe dizi içeren bir PDF'in çökmeden işlendiğini doğrular.
 Bağımlılık ağacında lopdf'in tek bir sürümü var (cargo tree -i lopdf yalnız 0.44.0 gösterir; printpdf 0.12.8 aynı sürümü kullanır).
 printpdf 0.12'ye taşındı; varsayılan html özelliği kapalı (default-features = false) ve görseller doğrudan image crate'iyle işlenir.
 Türkçe metin txt→pdf→txt gidiş-dönüşünde korunur (turkish_text_round_trips_through_pdf testi).
