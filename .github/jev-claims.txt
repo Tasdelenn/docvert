@@ -8,8 +8,7 @@
 
 cargo test tüm testleri geçiyor (birim + entegrasyon).
 cargo fmt --check ve clippy temiz geçiyor.
-html_to_text girdiyi tek seferde küçük harfe çevirir; etiket başına kalan metni kopyalamaz (karesel değil).
-ToUnicode CMap bfrange aralıkları MAX_BFRANGE_SPAN (0xFFFF) sınırını aşarsa atlanır.
-Toplu dönüşümde aynı ada düşen çıktılar kaynak uzantısıyla ayrışır; çözülemeyen çakışma dönüşüm başlamadan hata verir.
-DOCX metninde XML 1.0'da geçersiz kontrol karakterleri süzülür.
-Jev API anahtarı curl komut satırı argümanı olarak geçirilmez.
+lopdf 0.44'e yükseltildi; RUSTSEC-2026-0187 (derin iç içe nesnelerde yığın taşması) kapatıldı — regresyon testi 100k iç içe diziyle çökmeyi doğrular.
+Bağımlılık ağacında lopdf'in tek bir sürümü var (cargo tree -i lopdf yalnız 0.44.0 gösterir; printpdf 0.12.8 aynı sürümü kullanır).
+Metin→PDF çıktıları sistem TTF fontunu gömer (CIDFontType2 + ToUnicode); en küçük çıktı ~385 KB ölçüldü.
+Türkçe metin txt→pdf→txt gidiş-dönüşünde korunur (turkish_text_round_trips_through_pdf testi).
