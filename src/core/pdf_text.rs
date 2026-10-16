@@ -57,9 +57,7 @@ fn build_fonts(
         if let Ok(stream_id) = dictionary.get(b"ToUnicode").and_then(Object::as_reference) {
             if let Some(cached) = cmap_cache.get(&stream_id) {
                 cmap = Rc::clone(cached);
-            } else if let Ok(stream) =
-                document.get_object(stream_id).and_then(Object::as_stream)
-            {
+            } else if let Ok(stream) = document.get_object(stream_id).and_then(Object::as_stream) {
                 let data = stream
                     .decompressed_content()
                     .unwrap_or_else(|_| stream.content.clone());
@@ -1131,7 +1129,7 @@ mod tests {
                      <0050> <0052> <0061>\n\
                      endbfrange";
         let map = parse_cmap(cmap).map;
-        assert!(map.get(&0x0000).is_none());
+        assert!(!map.contains_key(&0x0000));
         assert_eq!(map.len(), 3);
         assert_eq!(map.get(&0x0050), Some(&"a".to_string()));
         assert_eq!(map.get(&0x0052), Some(&"c".to_string()));

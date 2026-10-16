@@ -433,6 +433,9 @@ mod tests {
             html.push_str("<p>x</p>");
         }
         let text = html_to_text(&html);
-        assert_eq!(text.lines().filter(|line| !line.is_empty()).count(), 200_000);
+        assert_eq!(
+            text.lines().filter(|line| !line.is_empty()).count(),
+            200_000
+        );
     }
 }
